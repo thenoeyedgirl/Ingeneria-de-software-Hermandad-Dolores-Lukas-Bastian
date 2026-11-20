@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fundación Hermandad de Dolores · Gestión de Citas</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+
+  <!-- Modal de confirmación para correo opcional inválido -->
+  <div id="emailModal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+    <div class="modal-card">
+      <h3>Correo electrónico no válido</h3>
+      <p id="emailModalText"></p>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="btnEmailCorregir">Corregir correo</button>
+        <button type="button" class="btn btn-primary" id="btnEmailOmitir">Enviar sin guardar correo</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====================================================================== -->
+  <!-- LAYOUT PÚBLICO: PORTAL PACIENTES Y ACCESO DE PERSONAL -->
+  <!-- ====================================================================== -->
+  <div id="publicShell" class="public-shell">
+    <header class="public-header">
+      <div class="public-header-inner">
+        <a href="#/pacientes/horas" class="brand-link">
+          <div class="brand-mark">HD</div>
+          <div>
+            <div class="brand-title">Fundación Hermandad de Dolores</div>
+            <div class="brand-sub">Policlínicos y Telemedicina · Gestión de Citas</div>
+          </div>
+        </a>
+        <nav class="public-nav">
+          <a href="#/pacientes/horas" class="pub-nav-link" data-route="pacientes/horas">Horas disponibles</a>
+          <a href="#/pacientes/solicitar" class="pub-nav-link" id="navSolicitarDirecto" data-route="pacientes/solicitar">Solicitar hora</a>
+          <a href="#/pacientes/consulta" class="pub-nav-link" data-route="pacientes/consulta">Consultar mi cita</a>
+          <a href="#/acceso" class="pub-nav-btn" data-route="acceso">Acceso personal</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="public-main">
+      <!-- PANTALLA 1: HORAS DISPONIBLES -->
+      <section id="route-pacientes-horas" class="route-view">
+        <div class="page-intro">
+          <h1>Consulta de horas disponibles</h1>
+          <p>Revisa los horarios publicados en nuestros 6 policlínicos presenciales y Telemedicina. Haz clic en <strong>«Solicitar esta hora»</strong> para continuar con el horario elegido.</p>
+        </div>
+
+        <div class="card">
+          <div class="filter-bar">
+            <label>Policlínico o modalidad
+              <select id="pubFiltroPol"></select>
+            </label>
+            <label>Especialidad
+              <select id="pubFiltroEsp"></select>
+            </label>
+            <button class="btn btn-primary" id="btnBuscarDisp" type="button">Buscar horas</button>
+          </div>
+          <div id="slotsGrid" class="slots-grid"></div>
+        </div>
+      </section>
+
+      <!-- PANTALLA 2: SOLICITAR HORA -->
+      <section id="route-pacientes-solicitar" class="route-view">
+        <div class="page-intro">
+          <h1>Solicitar hora de atención</h1>
+          <p>Completa los datos para registrar tu solicitud. Nuestro equipo confirmará tu hora por teléfono o WhatsApp, sin necesidad de crear cuenta ni recordar códigos.</p>
+        </div>
+
+        <!-- Modo A: Horario ya seleccionado desde Horas disponibles -->
+        <div id="selectedSlotBanner" class="selected-slot-banner hidden">
+          <div>
+            <span class="badge-teal">Horario seleccionado</span>
+            <div id="selectedSlotText" class="selected-slot-text"></div>
+          </div>
+          <button type="button" class="btn-link" id="btnLimpiarSlot">Cambiar horario</button>
+        </div>
+
+        <div class="card">
+          <form id="formSolicitudPaciente" class="form-grid" novalidate>
+            <!-- Modo B: Selectores dinámicos (ocultos si viene desde Horas disponibles) -->
+            <div id="bloqueSeleccionManual" class="span-2 form-grid">
+              <label>Policlínico *
+                <select name="policlinico_id" id="solPol" required></select>
+              </label>
+              <label>Especialidad *
+                <select name="especialidad_id" id="solEsp" required></select>
+              </label>
+              <label class="span-2">Horario disponible (se actualiza según policlínico y especialidad)
+                <select name="bloque_preferido_id" id="solBloque"></select>
+              </label>
+              <div id="solAltBox" class="span-2 alt-slots-box hidden"></div>
+            </div>
+
+            <!-- Datos del paciente -->
+            <label>RUT del paciente *
+              <input type="text" name="rut" id="solRut" data-rut-input="true" placeholder="12.345.678-5" autocomplete="off" required />
+              <small class="field-hint" id="hint-solRut"></small>
+            </label>
+            <label>Nombre completo del paciente *
+              <input type="text" name="nombre_completo" id="solNombre" placeholder="Nombre y apellidos" required />
+            </label>
+            <label>Fecha de nacimiento *
+              <input type="date" name="fecha_nacimiento" id="solFechaNac" required />
+              <small class="field-hint" id="hint-solEdad"></small>
+            </label>
+            <label>Nacionalidad *
+              <select name="nacionalidad" id="solNacionalidad">
+                <option value="Chilena" selected>Chilena</option>
+                <option value="Venezolana">Venezolana</option>
+                <option value="Peruana">Peruana</option>
+                <option value="Colombiana">Colombiana</option>
+                <option value="Haitiana">Haitiana</option>
+                <option value="Boliviana">Boliviana</option>
+                <option value="Argentina">Argentina</option>
+                <option value="Otra">Otra</option>
+              </select>
+            </label>
+
+            <!-- Switch de Tutor / Apoderado -->
+            <div class="span-2 switch-card">
+              <label class="switch-row">
+                <input type="checkbox" id="solUsaTutor" />
+                <span><strong>Solicito esta hora con tutor / apoderado a cargo</strong> (los datos de contacto pertenecerán al responsable)</span>
+              </label>
+              <small id="solTutorAviso" class="field-hint"></small>
+            </div>
+
+            <!-- Campos de Tutor (visibles solo si el switch está activo) -->
+            <div id="solTutorCampos" class="span-2 form-grid tutor-box hidden">
+              <label>Nombre completo del tutor / apoderado *
+                <input type="text" id="solTutorNombre" placeholder="Nombre del adulto responsable" />
+              </label>
+              <label>Parentesco *
+                <select id="solTutorParentesco">
+                  <option value="Madre">Madre</option>
+                  <option value="Padre">Padre</option>
+                  <option value="Hijo/a">Hijo/a</option>
+                  <option value="Tutor legal">Tutor legal</option>
+                  <option value="Familiar">Otro familiar</option>
+                  <option value="Acompañante">Acompañante / Cuidador</option>
+                </select>
+              </label>
+            </div>
+
+            <!-- Contacto (cambia etiqueta según si usa tutor o no) -->
+            <label>
+              <span id="lblSolTelefono">Teléfono de contacto del paciente *</span>
+              <input type="text" name="telefono" id="solTelefono" placeholder="+56 9 5000 0000 (o número extranjero)" required />
+              <small class="field-hint" id="hint-solTelefono"></small>
+            </label>
+            <label>
+              <span id="lblSolCorreo">Correo electrónico del paciente (opcional)</span>
+              <input type="text" name="correo" id="solCorreo" placeholder="nombre@ejemplo.cl" autocomplete="email" />
+              <small class="field-hint" id="hint-solCorreo"></small>
+            </label>
+
+            <!-- Folio documento FONASA / CESFAM (opcional) -->
+            <label>Tipo de respaldo (opcional)
+              <select name="tipo_documento" id="solTipoDoc">
+                <option value="FONASA">Certificado FONASA</option>
+                <option value="CESFAM">Comprobante CESFAM</option>
+                <option value="OTRO">Otro respaldo administrativo</option>
+              </select>
+            </label>
+            <label>Número de folio del documento (opcional)
+              <input type="text" name="folio_documento" id="solFolio" placeholder="Ej: FON-2026-00123" />
+              <small class="field-hint" id="hint-solFolio"></small>
+            </label>
+
+            <!-- Comentario adicional limpio -->
+            <label class="span-2">Comentario adicional (opcional)
+              <input type="text" name="observacion" id="solObs" placeholder="Ej: prefiero que me llamen en la tarde o asistiré con acompañante" />
+            </label>
+
+            <div class="span-2 form-actions">
+              <button type="submit" class="btn btn-primary">Enviar solicitud</button>
+              <a href="#/pacientes/horas" class="btn btn-ghost">Volver a horas disponibles</a>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <!-- PANTALLA 3: RESUMEN DE SOLICITUD / DETALLE DE CITA (CON ENCUESTA Y MODO PROTEGIDO) -->
+      <section id="route-pacientes-resumen" class="route-view">
+        <div class="page-intro">
+          <h1 id="resumenTitulo">Resumen de tu solicitud</h1>
+          <p id="resumenSubtitulo">Tu solicitud fue recibida correctamente. Nuestro equipo te contactará para confirmar la atención.</p>
+        </div>
+
+        <div class="card">
+          <div id="resumenPrivacidadBanner" class="alert-info hidden">
+            <strong>Protección de datos personales:</strong> por resguardo de privacidad, los apellidos, teléfono, correo y folios se muestran censurados en esta vista de consulta.
+          </div>
+          <div id="resumenDetalleBody" class="summary-grid"></div>
+          <div class="form-actions mt-12">
+            <a href="#/pacientes/horas" class="btn btn-primary">Ver horas disponibles</a>
+            <a href="#/pacientes/consulta" class="btn btn-ghost">Consultar otra cita por RUT</a>
+          </div>
+        </div>
+
+        <!-- Encuesta voluntaria de experiencia -->
+        <div id="encuestaWebBox" class="card survey-card hidden">
+          <h3>¿Cómo fue tu experiencia solicitando tu hora? (Opcional)</h3>
+          <form id="formEncuestaWeb" class="inline-form">
+            <select id="encWebPuntaje">
+              <option value="5">5 · Muy buena</option>
+              <option value="4">4 · Buena</option>
+              <option value="3">3 · Regular</option>
+              <option value="2">2 · Mejorable</option>
+              <option value="1">1 · Difícil</option>
+            </select>
+            <input type="text" id="encWebComentario" placeholder="Comentario opcional" />
+            <button type="submit" class="btn btn-secondary">Enviar opinión</button>
+          </form>
+        </div>
+      </section>
+
+      <!-- PANTALLA 4: CONSULTAR CITA POR RUT -->
+      <section id="route-pacientes-consulta" class="route-view">
+        <div class="page-intro">
+          <h1>Consultar mis citas por RUT</h1>
+          <p>Ingresa tu RUT para revisar tus citas agendadas y solicitudes en curso. Por protección de datos personales, los apellidos y datos de contacto aparecen censurados.</p>
+        </div>
+
+        <div class="card">
+          <form id="formConsultaRut" class="inline-form">
+            <div class="rut-inline-wrap">
+              <input type="text" id="inputConsultaRut" data-rut-input="true" placeholder="Ingresa tu RUT (ej: 14.567.890-0)" autocomplete="off" required />
+              <small class="field-hint" id="hint-inputConsultaRut"></small>
+            </div>
+            <button type="submit" class="btn btn-primary">Consultar</button>
+          </form>
+          <div id="resConsultaRut" class="mt-12 hidden"></div>
+        </div>
+      </section>
+
+      <!-- PANTALLA 5: ACCESO PERSONAL -->
+      <section id="route-acceso" class="route-view">
+        <div class="login-container">
+          <div class="card login-card">
+            <div class="login-head">
+              <div class="brand-mark brand-mark-lg">HD</div>
+              <h1>Acceso de personal</h1>
+              <p>Ingresa con tu cuenta institucional. El sistema te dirigirá automáticamente a tu panel correspondiente.</p>
+            </div>
+            <form id="formLogin" class="form-stack">
+              <label>Usuario institucional
+                <input type="text" id="loginUser" placeholder="Ej: tens.sanisidro" autocomplete="username" required />
+              </label>
+              <label>Contraseña
+                <input type="password" id="loginPass" placeholder="Ingresa tu contraseña" autocomplete="current-password" required />
+              </label>
+              <button type="submit" class="btn btn-primary btn-block">Iniciar sesión</button>
+            </form>
+            <div class="login-foot">
+              <a href="#/pacientes/horas" class="btn-link">← Volver al portal de pacientes</a>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="public-footer">
+      Fundación Hermandad de Dolores · Entorno demostrativo con datos ficticios
+    </footer>
+  </div>
+
+  <!-- ====================================================================== -->
+  <!-- LAYOUT PRIVADO: BARRA LATERAL AZUL MARINO (PANEL DEL PERSONAL) -->
+  <!-- ====================================================================== -->
+  <div id="staffShell" class="staff-shell hidden">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-mark">HD</div>
+        <div>
+          <div class="sb-title">Hermandad de Dolores</div>
+          <div class="sb-sub">Panel Institucional</div>
+        </div>
+      </div>
+
+      <div class="sidebar-profile">
+        <span class="sb-role-pill" id="sbRolePill">ROL</span>
+        <div class="sb-user-name" id="sbUserName">Usuario</div>
+        <div class="sb-user-sede" id="sbUserSede">Sede</div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <div id="menuOperativo" class="sb-group">
+          <div class="sb-group-title">Operación diaria</div>
+          <a href="#/panel/agendar" class="sb-link" data-route="panel/agendar">Agendamiento asistido</a>
+          <a href="#/panel/confirmaciones" class="sb-link" data-route="panel/confirmaciones">Confirmaciones y seguimiento</a>
+          <a href="#/panel/asistencia" class="sb-link" data-route="panel/asistencia">Recepción y asistencia</a>
+          <a href="#/panel/espera" class="sb-link" data-route="panel/espera">Lista de espera</a>
+        </div>
+
+        <div id="menuAdmin" class="sb-group hidden">
+          <div class="sb-group-title">Gestión central</div>
+          <a href="#/admin/agendas" class="sb-link" data-route="admin/agendas">Agendas y bloqueos</a>
+          <a href="#/admin/reportes" class="sb-link" data-route="admin/reportes">Reportes e indicadores</a>
+          <a href="#/admin/auditoria" class="sb-link" data-route="admin/auditoria">Auditoría administrativa</a>
+        </div>
+      </nav>
+
+      <div class="sidebar-footer">
+        <a href="#/pacientes/horas" class="sb-foot-link">Ver portal pacientes</a>
+        <button type="button" id="btnLogout" class="sb-logout-btn">Cerrar sesión</button>
+      </div>
+    </aside>
+
+    <div class="staff-main">
+      <header class="staff-topbar">
+        <div>
+          <h2 id="staffViewTitle">Panel Institucional</h2>
+          <p id="staffViewSubtitle" class="staff-sub">Gestión administrativa de citas</p>
+        </div>
+      </header>
+
+      <div class="staff-content">
+        <!-- PANEL 1: AGENDAMIENTO ASISTIDO -->
+        <section id="route-panel-agendar" class="route-view">
+          <div id="activeWaitlistBanner" class="selected-slot-banner hidden">
+            <div>
+              <span class="badge-teal">Atendiendo solicitud de lista de espera</span>
+              <div id="activeWaitlistText" class="selected-slot-text"></div>
+            </div>
+            <button type="button" class="btn-link" id="btnLimpiarSolicitud">Quitar</button>
+          </div>
+
+          <div class="two-col">
+            <div class="card">
+              <h3>1. Buscar o registrar ficha del paciente</h3>
+              <form id="formBuscarPac" class="inline-form">
+                <div class="rut-inline-wrap">
+                  <input type="text" id="opRutBuscar" data-rut-input="true" placeholder="RUT del paciente" autocomplete="off" required />
+                  <small class="field-hint" id="hint-opRutBuscar"></small>
+                </div>
+                <button type="submit" class="btn btn-secondary">Buscar</button>
+              </form>
+              <div id="fichaPacienteBox" class="info-box hidden"></div>
+
+              <details class="mt-12">
+                <summary>Registrar o actualizar paciente nuevo</summary>
+                <form id="formNuevoPac" class="form-grid mt-8" novalidate>
+                  <label>RUT *
+                    <input type="text" name="rut" id="newPacRut" data-rut-input="true" placeholder="12.345.678-5" autocomplete="off" required />
+                    <small class="field-hint" id="hint-newPacRut"></small>
+                  </label>
+                  <label>Nombre completo *<input type="text" name="nombre_completo" required /></label>
+                  <label>Fecha de nacimiento *
+                    <input type="date" name="fecha_nacimiento" id="newPacFechaNac" required />
+                    <small class="field-hint" id="hint-newPacEdad"></small>
+                  </label>
+                  <label>Nacionalidad
+                    <select name="nacionalidad">
+                      <option value="Chilena" selected>Chilena</option>
+                      <option value="Venezolana">Venezolana</option>
+                      <option value="Peruana">Peruana</option>
+                      <option value="Colombiana">Colombiana</option>
+                      <option value="Haitiana">Haitiana</option>
+                      <option value="Boliviana">Boliviana</option>
+                      <option value="Otra">Otra</option>
+                    </select>
+                  </label>
+
+                  <div class="span-2 switch-card">
+                    <label class="switch-row">
+                      <input type="checkbox" id="newPacUsaTutor" />
+                      <span><strong>Registrar con tutor / apoderado a cargo</strong> (contacto corresponde al responsable)</span>
+                    </label>
+                    <small id="newPacTutorAviso" class="field-hint"></small>
+                  </div>
+
+                  <div id="newPacTutorCampos" class="span-2 form-grid tutor-box hidden">
+                    <label>Nombre tutor / apoderado *<input type="text" id="newPacTutorNombre" /></label>
+                    <label>Parentesco *
+                      <select id="newPacTutorParentesco">
+                        <option value="Madre">Madre</option>
+                        <option value="Padre">Padre</option>
+                        <option value="Hijo/a">Hijo/a</option>
+                        <option value="Tutor legal">Tutor legal</option>
+                        <option value="Familiar">Otro familiar</option>
+                      </select>
+                    </label>
+                  </div>
+
+                  <label>
+                    <span id="lblNewPacTel">Teléfono del paciente *</span>
+                    <input type="text" name="telefono" id="newPacTel" placeholder="+56 9 5000 0000" required />
+                  </label>
+                  <label>
+                    <span id="lblNewPacCorreo">Correo electrónico (opcional)</span>
+                    <input type="text" name="correo" id="newPacCorreo" placeholder="nombre@ejemplo.cl" />
+                  </label>
+                  <label>Previsión<input type="text" name="prevision" value="FONASA" /></label>
+                  <label>CESFAM de origen<input type="text" name="cesfam_origen" placeholder="Opcional" /></label>
+                  <label>Tipo respaldo (opcional)
+                    <select name="tipo_documento">
+                      <option value="FONASA">FONASA</option>
+                      <option value="CESFAM">CESFAM</option>
+                      <option value="OTRO">Otro</option>
+                    </select>
+                  </label>
+                  <label>Folio documento (opcional)<input type="text" name="folio_documento" placeholder="Ej: FON-2026-00123" /></label>
+                  <div class="span-2"><button type="submit" class="btn btn-secondary">Guardar ficha</button></div>
+                </form>
+              </details>
+            </div>
+
+            <div class="card">
+              <h3>2. Asignar hora disponible</h3>
+              <form id="formAgendarCita" class="form-stack">
+                <label>RUT del paciente *
+                  <input type="text" id="citaRut" data-rut-input="true" placeholder="14.567.890-0" autocomplete="off" required />
+                  <small class="field-hint" id="hint-citaRut"></small>
+                </label>
+                <label>Bloque horario disponible *
+                  <select id="citaBloque" required></select>
+                </label>
+                <label>Canal de atención
+                  <select id="citaCanal">
+                    <option value="ASISTIDO_PRESENCIAL">Presencial en mesón</option>
+                    <option value="ASISTIDO_TELEFONO">Atención telefónica</option>
+                  </select>
+                </label>
+                <button type="submit" class="btn btn-primary">Agendar cita y emitir comprobante</button>
+              </form>
+              <div id="comprobanteBox" class="result-box hidden"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- PANEL 2: CONFIRMACIONES Y SEGUIMIENTO -->
+        <section id="route-panel-confirmaciones" class="route-view">
+          <div class="card">
+            <div class="alert-info">
+              <strong>Regla de seguimiento:</strong> marcar «Sin respuesta» deja registro de la llamada pero <strong>mantiene la cita activa</strong>. El cupo solo se libera si el paciente solicita cancelar su hora.
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>Fecha y hora</th><th>Paciente</th><th>Policlínico y profesional</th><th>Cita</th><th>Confirmación</th><th>Acciones</th></tr>
+                </thead>
+                <tbody id="tablaPendientesConf"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- PANEL 3: RECEPCIÓN Y ASISTENCIA -->
+        <section id="route-panel-asistencia" class="route-view">
+          <div class="card">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>Fecha y hora</th><th>Paciente</th><th>Sede y especialidad</th><th>Estado</th><th>Confirmación</th><th>Acciones</th></tr>
+                </thead>
+                <tbody id="tablaCitasOp"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- PANEL 4: LISTA DE ESPERA -->
+        <section id="route-panel-espera" class="route-view">
+          <div class="card">
+            <h3>Registrar nueva solicitud en lista de espera</h3>
+            <form id="formListaEspera" class="form-grid mb-12">
+              <label>RUT del paciente *
+                <input type="text" name="paciente_rut" id="leRut" data-rut-input="true" placeholder="19.876.543-0" autocomplete="off" required />
+                <small class="field-hint" id="hint-leRut"></small>
+              </label>
+              <label>Policlínico *<select name="policlinico_id" id="lePol" required></select></label>
+              <label>Especialidad *<select name="especialidad_id" id="leEsp" required></select></label>
+              <label>Prioridad
+                <select name="prioridad">
+                  <option value="ALTA">Alta</option>
+                  <option value="MEDIA">Media</option>
+                  <option value="NORMAL" selected>Normal</option>
+                </select>
+              </label>
+              <label class="span-2">Observación<input type="text" name="observacion" placeholder="Preferencia horaria o nota de contacto" /></label>
+              <div class="span-2"><button type="submit" class="btn btn-primary">Agregar a lista de espera</button></div>
+            </form>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>Paciente</th><th>Sede y especialidad</th><th>Prioridad</th><th>Estado</th><th>Observación</th><th>Gestión</th></tr>
+                </thead>
+                <tbody id="tablaListaEspera"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ADMIN 1: AGENDAS Y BLOQUEOS -->
+        <section id="route-admin-agendas" class="route-view">
+          <div class="card">
+            <h3>Publicar nuevo bloque horario</h3>
+            <form id="formCrearBloque" class="form-grid">
+              <label>Policlínico<select name="policlinico_id" id="admPol" required></select></label>
+              <label>Especialidad<select name="especialidad_id" id="admEsp" required></select></label>
+              <label>Profesional<select name="profesional_id" id="admProf" required></select></label>
+              <label>Fecha<input type="date" name="fecha" id="admFecha" required /></label>
+              <label>Hora inicio<input type="time" name="hora_inicio" value="11:00" required /></label>
+              <label>Hora término<input type="time" name="hora_fin" value="11:30" required /></label>
+              <div class="span-2"><button type="submit" class="btn btn-primary">Publicar bloque</button></div>
+            </form>
+          </div>
+          <div class="card">
+            <h3>Bloques publicados y control de bloqueos</h3>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>Fecha</th><th>Horario</th><th>Policlínico</th><th>Profesional</th><th>Estado</th><th>Acción</th></tr>
+                </thead>
+                <tbody id="tablaBloquesAdmin"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ADMIN 2: REPORTES E INDICADORES CON GRÁFICOS -->
+        <section id="route-admin-reportes" class="route-view">
+          <div class="kpi-grid" id="kpiGrid"></div>
+
+          <div class="charts-grid">
+            <div class="card">
+              <h3>Citas totales por policlínico y Telemedicina</h3>
+              <div id="chartSedes" class="bar-chart"></div>
+            </div>
+            <div class="card">
+              <h3>Distribución por estado de cita</h3>
+              <div id="chartEstados" class="bar-chart"></div>
+            </div>
+            <div class="card">
+              <h3>Caracterización de pacientes por tramo etario</h3>
+              <div id="chartEdad" class="bar-chart"></div>
+            </div>
+            <div class="card">
+              <h3>Caracterización de pacientes por nacionalidad</h3>
+              <div id="chartNacionalidad" class="bar-chart"></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head-row">
+              <h3>Detalle de indicadores por policlínico</h3>
+              <a href="/api/reportes/exportar-csv" class="btn btn-primary">Exportar CSV</a>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>Policlínico</th><th>Modalidad</th><th>Total</th><th>Reservadas</th><th>Asistidas</th><th>Inasistidas</th><th>Canceladas</th><th>Pend. conf.</th><th>% Asistencia</th></tr>
+                </thead>
+                <tbody id="tablaIndicadores"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ADMIN 3: AUDITORÍA -->
+        <section id="route-admin-auditoria" class="route-view">
+          <div class="card">
+            <h3>Registro reciente de operaciones administrativas</h3>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>Fecha y hora</th><th>Usuario</th><th>Rol</th><th>Sede</th><th>Operación</th><th>Detalle</th></tr>
+                </thead>
+                <tbody id="tablaAuditoria"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
