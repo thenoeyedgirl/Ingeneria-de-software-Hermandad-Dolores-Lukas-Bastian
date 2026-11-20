@@ -1,0 +1,20 @@
+# Entornos virtuales Python
+venv/
+.venv/
+env/
+
+# Variables de entorno locales (NUNCA subir a GitHub)
+.env
+.env.local
+
+# Cachés de Python y pruebas
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+
+# Editores / SO
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
