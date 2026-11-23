@@ -2,8 +2,8 @@
 
 **Mandante:** Fundación Hermandad de Dolores (6 policlínicos presenciales + Telemedicina como 7.º policlínico lógico)  
 **Patrocinador:** Universidad del Desarrollo (UDD)  
-**Equipo:** Bastián Ignacio Fariña y Lukas Garrido  
-**Modalidad de demostración (Entrega 23/11/2026):** Demostración local reproducible con PostgreSQL (16 / 18) y datos 100 % ficticios.
+**Equipo:** Bastián Ignacio Fariña y Lukas Garrido (Equipo 2 · Sección 1)  
+**Modalidad de demostración (Entrega 23/11/2026):** Demostración local reproducible con PostgreSQL (16 / 18), integración real opcional con **Meta WhatsApp Cloud API** y datos 100 % ficticios.
 
 ---
 
@@ -14,8 +14,10 @@ Aplicación web en **Arquitectura en Capas** construida con **Python 3.13 + Fast
 - `database/`: Scripts SQL reproducibles (`01_schema.sql`, `02_seed_ficticio.sql`, `03_seed_otros_policlinicos.sql`, `04_ampliar_ficha_mvp.sql`) con índice único parcial `ux_cita_bloque_activa` (0 % dobles reservas, `RNF04`), entidad `documentos_respaldo`, tabla `responsables` y 7 vistas SQL analíticas.
 - `app/domain/`: Validador de RUT chileno módulo 11 (`rut.py`), enmascaramiento de privacidad `P10` y **Patrón State** (`IEstadoCita` + `EstadoConfirmacion` separado para cumplir `RF09`: *«el silencio no cancela»*).
 - `app/repositories/`: **Patrón Repository** (`IRepositorioCita`, `IRepositorioCupo`), con `RepositorioCitaSQL` (PostgreSQL con `SELECT ... FOR UPDATE`) y `RepositorioCitaMemoria` (para pruebas unitarias aisladas).
-- `app/services/`: **Patrón Facade** (`ServicioAgendamiento`) y `IGestorNotificaciones` desacoplado (comprobantes sin código `RF28` y `AlertaOperativa`).
-- `app/web/`: Portal Pacientes (horas disponibles con selección directa, solicitud asistida con switch de tutor/apoderado según edad, folio documental opcional, pantalla de resumen con encuesta y consulta por RUT con datos protegidos) y Panel Institucional con barra lateral diferenciada para **TENS/TONS**, **Telemedicina** y **Administración** (con gráficos de gestión y caracterización).
+- `app/services/`: **Patrón Facade** (`ServicioAgendamiento`) e **`IGestorNotificaciones`** desacoplado con dos implementaciones:
+  - `GestorNotificacionesMetaWhatsApp`: integración directa con **Meta WhatsApp Cloud API** (recordatorio 24 h con botones interactivos *«Confirmar asistencia»* / *«Cancelar mi hora»*, recordatorio anticipado de 15 días, mensajes manuales de texto y webhook bidireccional `GET/POST /webhook`).
+  - `GestorNotificacionesSimulado`: modo local automático cuando no existen credenciales de Meta en `.env` (permite evaluar todo el sistema sin cuenta de Meta).
+- `app/web/`: Portal Pacientes (horas disponibles con selección directa, solicitud asistida con switch de tutor/apoderado obligatorio en menores de 18 años, folio documental opcional, pantalla de resumen con encuesta y consulta por RUT protegida) y Panel Institucional con barra lateral diferenciada para **TENS/TONS**, **Telemedicina** y **Administración** (con gráficos de gestión y caracterización).
 
 > **Frontera administrativa (`RF18`):** El sistema no incluye ficha clínica electrónica, videollamada propia ni código de reserva (`P6` descartado).
 
@@ -24,8 +26,9 @@ Aplicación web en **Arquitectura en Capas** construida con **Python 3.13 + Fast
 ## 2. Requisitos previos
 
 - **Python 3.10 o superior** (probado en Python 3.13).
-- **PostgreSQL 16 o 18** ejecutándose localmente (con `psql` o **pgAdmin 4**).
+- **PostgreSQL 16 o 18** ejecutándose localmente (`psql` o **pgAdmin 4**).
 - **Git**.
+- *(Opcional para pruebas en vivo de WhatsApp)*: Cuenta Meta for Developers con número de prueba Cloud API y `cloudflared` (Cloudflare Tunnel) para exponer el webhook. **No es obligatorio para evaluar el sistema local.**
 
 ---
 
@@ -33,7 +36,7 @@ Aplicación web en **Arquitectura en Capas** construida con **Python 3.13 + Fast
 
 ### Paso 1: Crear la base de datos y ejecutar los 4 scripts SQL en orden
 
-Desde `psql` (o desde **pgAdmin 4 → Query Tool** sobre la base `hermandad_dolores_mvp`):
+Desde `psql` (o en **pgAdmin 4 → Query Tool** sobre la base `hermandad_dolores_mvp`):
 
 ```bash
 psql -U postgres -c "CREATE DATABASE hermandad_dolores_mvp;"
@@ -61,11 +64,18 @@ python3 -m pip install -r requirements.txt
 
 ### Paso 3: Configurar variables de entorno (`.env`)
 
-Copia `.env.example` como `.env` y ajusta tu contraseña local de PostgreSQL (si la clave contiene `@` o `#`, codifícalos como `%40` y `%23`):
+Copia `.env.example` como `.env` y coloca tu contraseña local de PostgreSQL (si contiene `@` o `#`, codifícalos como `%40` y `%23`):
 
 ```env
 DATABASE_URL=postgresql://postgres:TU_CONTRASEÑA_LOCAL@localhost:5432/hermandad_dolores_mvp
 USE_MEMORY_REPO=false
+
+# Opcional — Meta WhatsApp Cloud API (si se dejan vacíos, opera en modo simulado local)
+WHATSAPP_TOKEN=
+WHATSAPP_PHONE_NUMBER_ID=
+WHATSAPP_API_VERSION=v25.0
+WHATSAPP_VERIFY_TOKEN=hermandad_dolores_webhook_2026
+WHATSAPP_TEST_TO=
 ```
 
 ### Paso 4: Levantar el servidor local
@@ -76,11 +86,21 @@ python -m uvicorn app.main:app --reload
 
 Abre en tu navegador:
 - **Aplicación web:** http://127.0.0.1:8000
+- **Verificación de estado:** http://127.0.0.1:8000/api/salud
 - **Documentación API (Swagger):** http://127.0.0.1:8000/docs
 
 ---
 
-## 4. Cuentas demostrativas (datos 100 % ficticios)
+## 4. Demostración opcional de WhatsApp Cloud API y Webhook
+
+Si se configuran `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID` y `WHATSAPP_TEST_TO` en `.env`:
+1. Desde **Panel Operativo → Confirmaciones y seguimiento**, el personal puede disparar **«WhatsApp 24h (botones)»**, **«WhatsApp 15d»** o enviar un **«Mensaje manual»** (también disponible en **Recepción y asistencia** para citas ya confirmadas).
+2. Para recibir respuestas y clics de botones en vivo en entorno local, exponer el puerto `8000` con Cloudflare Tunnel (`cloudflared tunnel --url http://127.0.0.1:8000`), registrar `https://<URL>/webhook` con el `WHATSAPP_VERIFY_TOKEN` en Meta for Developers y suscribir el campo `messages`.
+3. Al presionar **«Confirmar asistencia»** o **«Cancelar mi hora»** en WhatsApp, el webhook actualiza automáticamente la cita en PostgreSQL y registra el intercambio en el historial por policlínico y RUT.
+
+---
+
+## 5. Cuentas demostrativas (datos 100 % ficticios)
 
 | Rol | Sede / Alcance | Usuario | Contraseña demo |
 | --- | --- | --- | --- |
@@ -97,16 +117,16 @@ Abre en tu navegador:
 
 ---
 
-## 5. Pruebas automatizadas
+## 6. Pruebas automatizadas
 
 ```powershell
 python -m pytest -v
 ```
-*(También ejecutables con `python -m unittest discover -s tests -v`).*
+*(También ejecutables con `python -m unittest discover -s tests -v`).* Incluye 10 pruebas de dominio, concurrencia anti doble reserva (`RNF04`), regla `RF09` (*el silencio no cancela*), consulta protegida `P10`, reportes CSV y webhook interactivo de Meta WhatsApp.
 
 ---
 
-## 6. Seguridad y datos
+## 7. Seguridad y datos
 
 - Todos los registros incluidos son **100 % ficticios y anonimizados**.
-- El archivo `.env` está excluido en `.gitignore`; **no publicar contraseñas ni claves reales en el repositorio**.
+- El archivo `.env` está excluido en `.gitignore`; **no publicar contraseñas, tokens de Meta ni claves reales en el repositorio**.

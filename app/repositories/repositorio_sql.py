@@ -686,6 +686,30 @@ class RepositorioCitaSQL(IRepositorioCita):
                 )
                 return _serializar(cur.fetchone())  # type: ignore[return-value]
 
+    def listar_mensajes_whatsapp(self, policlinico_id: Optional[int] = None, rut: Optional[str] = None) -> list[dict[str, Any]]:
+        clauses = ["1=1"]
+        params: list[Any] = []
+        if policlinico_id:
+            clauses.append("(v.policlinico_id = %s OR n.cita_id IS NULL)")
+            params.append(policlinico_id)
+        if rut:
+            like = f"%{rut.strip()}%"
+            clauses.append("(v.paciente_rut ILIKE %s OR n.destinatario ILIKE %s)")
+            params.extend([like, like])
+        query = f"""
+            SELECT n.id, n.cita_id, n.canal, n.tipo_mensaje, n.destinatario,
+                   n.estado_envio, n.detalle, n.enviado_en,
+                   v.paciente_rut, v.paciente_nombre, v.policlinico_id, v.policlinico_nombre
+            FROM notificaciones_log n
+            LEFT JOIN v_citas_detalle v ON v.cita_id = n.cita_id
+            WHERE {' AND '.join(clauses)}
+            ORDER BY n.id DESC
+            LIMIT 30
+        """
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(query, params)
+            return _serializar_lista(cur.fetchall())
+
     def obtener_reportes(self) -> dict[str, Any]:
         with self._connect() as conn, conn.cursor() as cur:
             cur.execute("SELECT * FROM v_indicadores_citas")

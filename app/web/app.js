@@ -8,6 +8,7 @@ const state = {
   solicitudEnCurso: null,
   resumenActual: null, // { modo: "solicitud" | "consulta", datos: {...} }
   pendingSubmitAction: null,
+  waManualCitaId: null,
 };
 
 // ===================== VALIDACIONES (RUT, TELÉFONO, CORREO, EDAD) =====================
@@ -448,6 +449,9 @@ async function cargarDatosOperativos() {
         <td>${pillEstado(c.estado_cita)}</td>
         <td>${pillEstado(c.estado_confirmacion)}</td>
         <td>
+          <button class="btn-sm btn-ok" onclick="enviarWhatsApp(this, ${c.cita_id}, 'RECORDATORIO_24H')">WhatsApp 24h (botones)</button>
+          <button class="btn-sm btn-neutral" onclick="enviarWhatsApp(this, ${c.cita_id}, 'RECORDATORIO_15D')">WhatsApp 15d</button>
+          <button class="btn-sm btn-neutral" onclick="abrirMensajeManual(${c.cita_id}, '${c.paciente_nombre.replace(/'/g, "")}')">Mensaje manual</button>
           <button class="btn-sm btn-ok" onclick="confirmarCita(${c.cita_id}, 'CONFIRMADA')">Confirmar</button>
           <button class="btn-sm btn-warn" onclick="confirmarCita(${c.cita_id}, 'SIN_RESPUESTA')">Sin respuesta</button>
           <button class="btn-sm btn-danger" onclick="cancelarCita(${c.cita_id}, 'WHATSAPP_PACIENTE')">Cancelar hora</button>
@@ -467,6 +471,7 @@ async function cargarDatosOperativos() {
         ${c.estado_cita === "RESERVADA" ? `
           <button class="btn-sm btn-ok" onclick="marcarAsistencia(${c.cita_id}, true)">Asistió</button>
           <button class="btn-sm btn-warn" onclick="marcarAsistencia(${c.cita_id}, false)">Inasistió</button>
+          <button class="btn-sm btn-neutral" onclick="abrirMensajeManual(${c.cita_id}, '${c.paciente_nombre.replace(/'/g, "")}')">Mensaje manual</button>
           <button class="btn-sm btn-danger" onclick="cancelarCita(${c.cita_id}, 'ASISTIDA_TENS')">Cancelar</button>
         ` : `<small class="muted">Cita cerrada</small>`}
       </td>
@@ -475,6 +480,7 @@ async function cargarDatosOperativos() {
 
   state.listaEsperaItems = espera;
   actualizarBannerSolicitud();
+  cargarMensajesWhatsApp();
   document.getElementById("tablaListaEspera").innerHTML = espera.map(le => `
     <tr>
       <td>${le.paciente_nombre}<br><small class="muted">${le.paciente_rut} · ${le.paciente_telefono}</small></td>
@@ -532,6 +538,84 @@ window.agendarDesdeSolicitud = async (itemId) => {
     const p = await api(`/api/pacientes/buscar?rut=${encodeURIComponent(item.paciente_rut)}`);
     renderFichaPaciente(p);
   } catch (_) {}
+};
+
+async function cargarMensajesWhatsApp() {
+  const tbody = document.getElementById("tablaMensajesWa");
+  if (!tbody) return;
+  try {
+    const qs = new URLSearchParams();
+    if (state.user?.policlinico_id) qs.set("policlinico_id", state.user.policlinico_id);
+    const filtroRut = (document.getElementById("filtroWaRut")?.value || "").trim();
+    if (filtroRut) qs.set("rut", filtroRut);
+    const msgs = await api(`/api/whatsapp/mensajes${qs.toString() ? "?" + qs.toString() : ""}`);
+    if (!msgs.length) {
+      tbody.innerHTML = `<tr><td colspan="5" class="muted">Sin mensajes registrados para este filtro.</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = msgs.map(m => {
+      const det = m.detalle || "";
+      const esRecibido = det.startsWith("[RECIBIDO]");
+      const badge = esRecibido
+        ? `<span class="pill pill-green">RECIBIDO</span>`
+        : (m.estado_envio === "FALLO_ALERTA_OPERATIVA"
+            ? `<span class="pill pill-red">ALERTA</span>`
+            : `<span class="pill pill-blue">ENVIADO</span>`);
+      const limpio = det.replace(/^\[(RECIBIDO|MANUAL)\]\s*/, "");
+      const pacInfo = m.paciente_rut
+        ? `<strong>${m.paciente_nombre || ""}</strong><br><small class="muted">${m.paciente_rut}</small>`
+        : `<small class="muted">Respuesta entrante</small>`;
+      return `
+        <tr>
+          <td><small>${(m.enviado_en || "").replace("T", " ").slice(0, 19)}</small></td>
+          <td>${badge}</td>
+          <td>${pacInfo}</td>
+          <td><small>${m.destinatario || "—"}</small></td>
+          <td>${limpio}</td>
+        </tr>
+      `;
+    }).join("");
+  } catch (_) {}
+}
+
+window.enviarWhatsApp = async (btn, citaId, tipo) => {
+  const textoOriginal = btn ? btn.textContent : "";
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Enviando...";
+  }
+  showToast("Enviando mensaje por WhatsApp...");
+  try {
+    const res = await api(`/api/citas/${citaId}/recordatorio-whatsapp`, {
+      method: "POST",
+      body: JSON.stringify({ tipo }),
+    });
+    if (res.alerta_operativa) {
+      showToast(`Aviso WhatsApp con alerta: ${res.detalle}`, true);
+    } else {
+      showToast(tipo === "RECORDATORIO_15D"
+        ? "Recordatorio anticipado (15d) enviado por WhatsApp."
+        : "Recordatorio 24h con botones enviado por WhatsApp.");
+    }
+    cargarMensajesWhatsApp();
+  } catch (err) {
+    showToast(err.message, true);
+  } finally {
+    if (btn) {
+      setTimeout(() => {
+        btn.disabled = false;
+        btn.textContent = textoOriginal;
+      }, 2500);
+    }
+  }
+};
+
+window.abrirMensajeManual = (citaId, pacienteNombre) => {
+  state.waManualCitaId = citaId;
+  document.getElementById("waManualInfo").textContent = `Destinatario: ${pacienteNombre} (Cita #${citaId})`;
+  document.getElementById("waManualTexto").value = "";
+  document.getElementById("waManualModal").classList.remove("hidden");
+  document.getElementById("waManualTexto").focus();
 };
 
 window.confirmarCita = async (citaId, estadoConf) => {
@@ -1006,6 +1090,67 @@ document.getElementById("formCrearBloque").addEventListener("submit", async (e) 
     showToast("Bloque publicado en agenda.");
     cargarDatosAdmin();
   } catch (err) { showToast(err.message, true); }
+});
+
+
+document.getElementById("btnWaManualCancelar")?.addEventListener("click", () => {
+  document.getElementById("waManualModal").classList.add("hidden");
+  state.waManualCitaId = null;
+});
+
+document.getElementById("formWaManual")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (!state.waManualCitaId) return;
+  const btn = document.getElementById("btnWaManualEnviar");
+  const txt = document.getElementById("waManualTexto").value.trim();
+  if (!txt) return;
+  btn.disabled = true;
+  btn.textContent = "Enviando...";
+  showToast("Enviando mensaje personalizado por WhatsApp...");
+  try {
+    const res = await api(`/api/citas/${state.waManualCitaId}/mensaje-whatsapp`, {
+      method: "POST",
+      body: JSON.stringify({ mensaje: txt }),
+    });
+    document.getElementById("waManualModal").classList.add("hidden");
+    state.waManualCitaId = null;
+    if (res.alerta_operativa) {
+      showToast(`Error al enviar: ${res.detalle}`, true);
+    } else {
+      showToast("Mensaje personalizado enviado correctamente.");
+    }
+    cargarMensajesWhatsApp();
+  } catch (err) {
+    showToast(err.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Enviar mensaje";
+  }
+});
+
+document.getElementById("filtroWaRut")?.addEventListener("input", cargarMensajesWhatsApp);
+document.getElementById("btnRefrescarWa")?.addEventListener("click", async () => {
+  await cargarDatosOperativos();
+  showToast("Mensajes y confirmaciones actualizados.");
+});
+
+document.getElementById("btnSuscribirWaba")?.addEventListener("click", async (e) => {
+  const btn = e.target;
+  btn.disabled = true;
+  btn.textContent = "Activando...";
+  try {
+    const res = await api("/api/whatsapp/suscribir-waba", { method: "POST", body: JSON.stringify({}) });
+    if (res.status_code >= 200 && res.status_code < 300) {
+      showToast("Recepción webhook activada en Meta (subscribed_apps OK).");
+    } else {
+      showToast(`Meta respondió HTTP ${res.status_code}: ${JSON.stringify(res.respuesta)}`, true);
+    }
+  } catch (err) {
+    showToast(err.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Activar recepción webhook";
+  }
 });
 
 // ===================== INICIALIZACIÓN =====================

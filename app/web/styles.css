@@ -41,6 +41,17 @@ body {
   width: 38px; height: 38px; border-radius: 10px; background: var(--teal); color: #fff;
   display: grid; place-items: center; font-weight: 800; font-size: 0.95rem; flex-shrink: 0;
 }
+
+.brand-logo {
+  width: 44px; height: 44px; object-fit: contain; flex-shrink: 0; display: block;
+}
+.brand-logo-lg {
+  width: 68px; height: 68px; object-fit: contain; display: block; margin: 0 auto 10px;
+}
+.brand-logo-sb {
+  width: 42px; height: 42px; object-fit: contain; flex-shrink: 0; display: block;
+}
+
 .brand-mark-lg { width: 48px; height: 48px; font-size: 1.15rem; margin: 0 auto 10px; }
 .brand-title { font-weight: 700; color: var(--navy); font-size: 1.02rem; }
 .brand-sub { font-size: 0.78rem; color: var(--muted); }
@@ -300,4 +311,49 @@ th { background: #f1f6fa; color: var(--navy); font-weight: 700; font-size: 0.8re
   .sidebar { width: 100%; }
   .two-col, .form-grid, .kpi-grid, .charts-grid, .summary-grid { grid-template-columns: 1fr; }
   .span-2 { grid-column: span 1; }
+}
+
+/* ===================== FIX RESPONSIVO MÓVIL (ZERO OVERFLOW) ===================== */
+html, body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+.card, .public-main, .staff-content, .form-grid, .two-col, .slots-grid, .summary-grid {
+  max-width: 100%;
+}
+.form-grid > *, .two-col > *, .summary-grid > *, .slots-grid > *, label {
+  min-width: 0;
+  max-width: 100%;
+}
+input, select, textarea {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+.switch-row input[type="checkbox"] {
+  width: 18px;
+  flex-shrink: 0;
+}
+.switch-row span {
+  min-width: 0;
+  word-break: break-word;
+}
+.selected-slot-text, .summary-value, .alt-slots-box {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+  .public-header-inner { padding: 10px 14px; }
+  .public-main { padding: 0 12px; margin: 16px auto 28px; }
+  .staff-topbar { padding: 14px 16px; }
+  .staff-content { padding: 14px 12px 28px; }
+  .card { padding: 14px; }
+  .slots-grid { grid-template-columns: 1fr; }
+  .filter-bar { flex-direction: column; align-items: stretch; }
+  .filter-bar label, .filter-bar .btn { width: 100%; }
+  .inline-form { flex-direction: column; align-items: stretch; }
+  .rut-inline-wrap { min-width: 0; width: 100%; }
+  .form-actions { flex-direction: column; align-items: stretch; }
+  .form-actions .btn, .form-actions input { width: 100%; text-align: center; }
+  .pub-nav-link, .pub-nav-btn { font-size: 0.82rem; padding: 6px 10px; }
 }

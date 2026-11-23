@@ -459,6 +459,26 @@ class RepositorioCitaMemoria(IRepositorioCita):
         self.encuestas.append(item)
         return item
 
+    def listar_mensajes_whatsapp(self, policlinico_id: Optional[int] = None, rut: Optional[str] = None) -> list[dict[str, Any]]:
+        res = []
+        for n in self.notificaciones:
+            c = self.obtener_cita(n["cita_id"]) if n.get("cita_id") else None
+            if policlinico_id and c and c["policlinico_id"] != policlinico_id:
+                continue
+            item = {
+                **n,
+                "paciente_rut": c["paciente_rut"] if c else None,
+                "paciente_nombre": c["paciente_nombre"] if c else None,
+                "policlinico_id": c["policlinico_id"] if c else None,
+                "policlinico_nombre": c["policlinico_nombre"] if c else None,
+            }
+            if rut:
+                q = rut.strip().lower()
+                if q not in (item["paciente_rut"] or "").lower() and q not in (item["destinatario"] or "").lower():
+                    continue
+            res.append(item)
+        return res[:30]
+
     def obtener_reportes(self) -> dict[str, Any]:
         detalles = self.listar_citas()
         indicadores = []

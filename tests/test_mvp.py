@@ -100,6 +100,54 @@ class TestApiEndToEnd(unittest.TestCase):
         self.assertEqual(r_csv.status_code, 200)
         self.assertIn("San Isidro (Casa Central)", r_csv.text)
 
+    def test_webhook_meta_verificacion_y_botones_interactivos(self):
+        # 1. Handshake GET /webhook
+        r_ok = self.client.get("/webhook?hub.mode=subscribe&hub.verify_token=hermandad_dolores_webhook_2026&hub.challenge=123456")
+        self.assertEqual(r_ok.status_code, 200)
+        self.assertEqual(r_ok.text, "123456")
+
+        r_bad = self.client.get("/webhook?hub.mode=subscribe&hub.verify_token=incorrecto&hub.challenge=123456")
+        self.assertEqual(r_bad.status_code, 403)
+
+        # 2. Disparo de recordatorio 24h con botones y 15d
+        r_24 = self.client.post("/api/citas/1/recordatorio-whatsapp", json={"tipo": "RECORDATORIO_24H"})
+        self.assertEqual(r_24.status_code, 200)
+        r_15 = self.client.post("/api/citas/1/recordatorio-whatsapp", json={"tipo": "RECORDATORIO_15D"})
+        self.assertEqual(r_15.status_code, 200)
+
+        # 3. Webhook botón CONFIRMAR_1 -> actualiza estado_confirmacion = CONFIRMADA
+        payload_conf = {
+            "entry": [{"changes": [{"value": {"messages": [
+                {"from": "56950000001", "type": "interactive", "interactive": {"button_reply": {"id": "CONFIRMAR_1", "title": "Confirmar asistencia"}}}
+            ]}}]}]
+        }
+        r_wh1 = self.client.post("/webhook", json=payload_conf)
+        self.assertEqual(r_wh1.status_code, 200)
+        self.assertEqual(self.repo.obtener_cita(1)["estado_confirmacion"], "CONFIRMADA")
+
+        # 4. Webhook botón CANCELAR_1 -> cancela y libera el bloque 1
+        payload_can = {
+            "entry": [{"changes": [{"value": {"messages": [
+                {"from": "56950000001", "type": "interactive", "interactive": {"button_reply": {"id": "CANCELAR_1", "title": "Cancelar mi hora"}}}
+            ]}}]}]
+        }
+        r_wh2 = self.client.post("/webhook", json=payload_can)
+        self.assertEqual(r_wh2.status_code, 200)
+        self.assertEqual(self.repo.obtener_cita(1)["estado_cita"], "CANCELADA")
+        self.assertEqual(self.repo.obtener_cita(1)["origen_cancelacion"], "WHATSAPP_PACIENTE")
+
+        # 5. Mensaje manual personalizado + respuesta de texto entrante
+        r_man = self.client.post("/api/citas/1/mensaje-whatsapp", json={"mensaje": "Traer carnet de identidad."})
+        self.assertEqual(r_man.status_code, 200)
+        r_txt = self.client.post("/webhook", json={
+            "entry": [{"changes": [{"value": {"messages": [
+                {"from": "56950000001", "type": "text", "text": {"body": "Muchas gracias, ahí estaré"}}
+            ]}}]}]
+        })
+        self.assertEqual(r_txt.status_code, 200)
+        msgs = self.client.get("/api/whatsapp/mensajes").json()
+        self.assertTrue(any("[RECIBIDO] Muchas gracias" in (m.get("detalle") or "") for m in msgs))
+
 
 if __name__ == "__main__":
     unittest.main()

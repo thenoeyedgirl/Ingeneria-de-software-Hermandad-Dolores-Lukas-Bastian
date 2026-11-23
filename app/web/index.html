@@ -4,10 +4,28 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Fundación Hermandad de Dolores · Gestión de Citas</title>
+  <link rel="icon" type="image/png" href="/static/logo_hermandad.png" />
   <link rel="stylesheet" href="/static/styles.css" />
 </head>
 <body>
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+
+  <!-- Modal de mensaje manual WhatsApp (solo texto) -->
+  <div id="waManualModal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+    <div class="modal-card">
+      <h3>Enviar mensaje manual por WhatsApp</h3>
+      <p id="waManualInfo" class="muted"></p>
+      <form id="formWaManual" class="form-stack">
+        <label>Mensaje de texto (sin archivos adjuntos) *
+          <textarea id="waManualTexto" rows="4" placeholder="Ej: Estimado/a paciente, le informamos un ajuste en su horario de atención..." required style="padding:9px 11px;border:1px solid #c7d4e2;border-radius:8px;font-family:inherit;font-size:0.9rem;"></textarea>
+        </label>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" id="btnWaManualCancelar">Cancelar</button>
+          <button type="submit" class="btn btn-primary" id="btnWaManualEnviar">Enviar mensaje</button>
+        </div>
+      </form>
+    </div>
+  </div>
 
   <!-- Modal de confirmación para correo opcional inválido -->
   <div id="emailModal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
@@ -28,7 +46,7 @@
     <header class="public-header">
       <div class="public-header-inner">
         <a href="#/pacientes/horas" class="brand-link">
-          <div class="brand-mark">HD</div>
+          <img src="/static/logo_hermandad.png" alt="Logo Fundación Hermandad de Dolores" class="brand-logo" />
           <div>
             <div class="brand-title">Fundación Hermandad de Dolores</div>
             <div class="brand-sub">Policlínicos y Telemedicina · Gestión de Citas</div>
@@ -245,7 +263,7 @@
         <div class="login-container">
           <div class="card login-card">
             <div class="login-head">
-              <div class="brand-mark brand-mark-lg">HD</div>
+              <img src="/static/logo_hermandad.png" alt="Logo Fundación Hermandad de Dolores" class="brand-logo-lg" />
               <h1>Acceso de personal</h1>
               <p>Ingresa con tu cuenta institucional. El sistema te dirigirá automáticamente a tu panel correspondiente.</p>
             </div>
@@ -277,7 +295,7 @@
   <div id="staffShell" class="staff-shell hidden">
     <aside class="sidebar">
       <div class="sidebar-brand">
-        <div class="brand-mark">HD</div>
+        <img src="/static/logo_hermandad_blanco.png" alt="Logo Fundación Hermandad de Dolores" class="brand-logo-sb" />
         <div>
           <div class="sb-title">Hermandad de Dolores</div>
           <div class="sb-sub">Panel Institucional</div>
@@ -447,6 +465,25 @@
                   <tr><th>Fecha y hora</th><th>Paciente</th><th>Policlínico y profesional</th><th>Cita</th><th>Confirmación</th><th>Acciones</th></tr>
                 </thead>
                 <tbody id="tablaPendientesConf"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head-row">
+              <h3>Historial de mensajes WhatsApp (por policlínico)</h3>
+              <div class="form-actions">
+                <input type="text" id="filtroWaRut" placeholder="Filtrar por RUT o teléfono" style="padding:7px 10px;font-size:0.84rem;min-width:190px;" />
+                <button type="button" class="btn btn-ghost" id="btnSuscribirWaba">Activar recepción webhook</button>
+                <button type="button" class="btn btn-secondary" id="btnRefrescarWa">Actualizar</button>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>Fecha / Hora</th><th>Dirección</th><th>Paciente / RUT</th><th>Teléfono</th><th>Contenido</th></tr>
+                </thead>
+                <tbody id="tablaMensajesWa"></tbody>
               </table>
             </div>
           </div>

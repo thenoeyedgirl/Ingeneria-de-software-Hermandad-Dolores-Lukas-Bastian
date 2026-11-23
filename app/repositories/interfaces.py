@@ -149,6 +149,10 @@ class IRepositorioCita(IRepositorioCupo, ABC):
         ...
 
     @abstractmethod
+    def listar_mensajes_whatsapp(self, policlinico_id: Optional[int] = None, rut: Optional[str] = None) -> list[dict[str, Any]]:
+        ...
+
+    @abstractmethod
     def obtener_reportes(self) -> dict[str, Any]:
         ...
 

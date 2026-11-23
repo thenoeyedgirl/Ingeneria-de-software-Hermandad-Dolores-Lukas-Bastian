@@ -11,8 +11,9 @@ import os
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse, StreamingResponse
+from datetime import date, timedelta
+from fastapi import Body, FastAPI, HTTPException, Query, Request
+from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 try:
@@ -42,7 +43,7 @@ from app.repositories.interfaces import (
     IRepositorioCita,
 )
 from app.repositories.repositorio_memoria import RepositorioCitaMemoria
-from app.services.notificaciones import GestorNotificacionesSimulado
+from app.services.notificaciones import GestorNotificacionesSimulado, crear_notificador_desde_entorno
 from app.services.servicio_agendamiento import ServicioAgendamiento
 
 
@@ -72,11 +73,16 @@ def crear_app(repo: Optional[IRepositorioCita] = None) -> FastAPI:
     else:
         repo_inst, modo_repo = repo, "INYECTADO (Pruebas)"
 
-    notificador = GestorNotificacionesSimulado(simular_fallo=False)
+    if repo is None:
+        notificador, modo_wa = crear_notificador_desde_entorno()
+    else:
+        notificador, modo_wa = GestorNotificacionesSimulado(simular_fallo=False), "Simulado (Pruebas)"
     servicio = ServicioAgendamiento(repo_inst, notificador)
     app.state.repo = repo_inst
     app.state.servicio = servicio
+    app.state.notificador = notificador
     app.state.modo_repo = modo_repo
+    app.state.modo_wa = modo_wa
 
     web_dir = Path(__file__).parent / "web"
     app.mount("/static", StaticFiles(directory=str(web_dir)), name="static")
@@ -91,6 +97,7 @@ def crear_app(repo: Optional[IRepositorioCita] = None) -> FastAPI:
             "estado": "ok",
             "proyecto": "Fundación Hermandad de Dolores — MVP Fase 1",
             "repositorio": app.state.modo_repo,
+            "whatsapp": app.state.modo_wa,
             "datos": "100 % ficticios para demostración local reproducible",
         }
 
@@ -293,6 +300,176 @@ def crear_app(repo: Optional[IRepositorioCita] = None) -> FastAPI:
     @app.get("/api/auditoria")
     def auditoria(limite: int = 40):
         return app.state.repo.listar_auditoria(limite)
+
+    # --- M5: Recordatorios WhatsApp (24h con botones y 15d anticipado) + Webhook Meta ---
+    @app.post("/api/citas/{cita_id}/recordatorio-whatsapp")
+    def enviar_recordatorio_whatsapp(cita_id: int, payload: dict = Body(default={"tipo": "RECORDATORIO_24H"})):
+        cita = app.state.repo.obtener_cita(cita_id)
+        if not cita:
+            raise HTTPException(status_code=404, detail="Cita no encontrada.")
+        tipo = (payload.get("tipo") or "RECORDATORIO_24H").upper()
+        if tipo not in ("RECORDATORIO_24H", "RECORDATORIO_15D"):
+            raise HTTPException(status_code=400, detail="Tipo de recordatorio inválido (use RECORDATORIO_24H o RECORDATORIO_15D).")
+        notif = app.state.notificador.enviar_recordatorio(cita, tipo=tipo)
+        app.state.repo.registrar_notificacion(
+            cita_id, notif.canal, notif.tipo_mensaje, notif.destinatario, notif.estado_envio, notif.detalle
+        )
+        return {
+            "cita_id": cita_id,
+            "tipo": tipo,
+            "modo_whatsapp": app.state.modo_wa,
+            "estado_envio": notif.estado_envio,
+            "alerta_operativa": notif.alerta_operativa,
+            "detalle": notif.detalle,
+        }
+
+    @app.post("/api/whatsapp/ejecutar-recordatorios")
+    def ejecutar_barrido_recordatorios():
+        hoy = date.today()
+        manana = (hoy + timedelta(days=1)).isoformat()
+        en_15d = (hoy + timedelta(days=15)).isoformat()
+        en_7d = (hoy + timedelta(days=7)).isoformat()
+        citas_res = app.state.repo.listar_citas(estado_cita="RESERVADA")
+        enviados = []
+        for c in citas_res:
+            if c["fecha"] == manana and c["estado_confirmacion"] in ("PENDIENTE", "SIN_RESPUESTA"):
+                n = app.state.notificador.enviar_recordatorio(c, tipo="RECORDATORIO_24H")
+                app.state.repo.registrar_notificacion(c["cita_id"], n.canal, n.tipo_mensaje, n.destinatario, n.estado_envio, n.detalle)
+                enviados.append({"cita_id": c["cita_id"], "tipo": "RECORDATORIO_24H", "alerta": n.alerta_operativa})
+            elif c["fecha"] in (en_15d, en_7d):
+                n = app.state.notificador.enviar_recordatorio(c, tipo="RECORDATORIO_15D")
+                app.state.repo.registrar_notificacion(c["cita_id"], n.canal, n.tipo_mensaje, n.destinatario, n.estado_envio, n.detalle)
+                enviados.append({"cita_id": c["cita_id"], "tipo": "RECORDATORIO_15D", "alerta": n.alerta_operativa})
+        return {"fecha_referencia": hoy.isoformat(), "procesados": len(enviados), "detalle": enviados}
+
+
+    @app.post("/api/citas/{cita_id}/mensaje-whatsapp")
+    def enviar_mensaje_manual_whatsapp(cita_id: int, payload: dict = Body(...)):
+        cita = app.state.repo.obtener_cita(cita_id)
+        if not cita:
+            raise HTTPException(status_code=404, detail="Cita no encontrada.")
+        texto = (payload.get("mensaje") or "").strip()
+        if not texto:
+            raise HTTPException(status_code=400, detail="Escribe un mensaje de texto antes de enviar.")
+        cuerpo = f"Fundación Hermandad de Dolores ({cita['policlinico_nombre']}): {texto}"
+        notif = app.state.notificador.enviar_texto_simple(cita["paciente_telefono"], cuerpo)
+        app.state.repo.registrar_notificacion(
+            cita_id, notif.canal, "CAMBIO_AGENDA", notif.destinatario, notif.estado_envio, f"[MANUAL] {texto}"[:295]
+        )
+        return {
+            "cita_id": cita_id,
+            "modo_whatsapp": app.state.modo_wa,
+            "estado_envio": notif.estado_envio,
+            "alerta_operativa": notif.alerta_operativa,
+            "detalle": notif.detalle,
+        }
+
+    @app.get("/api/whatsapp/mensajes")
+    def listar_mensajes_whatsapp(policlinico_id: Optional[int] = None, rut: Optional[str] = None):
+        return app.state.repo.listar_mensajes_whatsapp(policlinico_id=policlinico_id, rut=rut)
+
+    @app.post("/api/whatsapp/suscribir-waba")
+    def suscribir_waba_meta(payload: dict = Body(default={})):
+        import httpx as _httpx
+        token = os.getenv("WHATSAPP_TOKEN", "").strip()
+        waba_id = (payload.get("waba_id") or os.getenv("WHATSAPP_WABA_ID", "1051254647997426")).strip()
+        api_ver = os.getenv("WHATSAPP_API_VERSION", "v25.0").strip()
+        if not token:
+            raise HTTPException(status_code=400, detail="No hay WHATSAPP_TOKEN configurado en .env.")
+        url = f"https://graph.facebook.com/{api_ver}/{waba_id}/subscribed_apps"
+        try:
+            with _httpx.Client(timeout=15.0) as client:
+                r = client.post(url, headers={"Authorization": f"Bearer {token}"})
+            return {"status_code": r.status_code, "waba_id": waba_id, "respuesta": r.json()}
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Error suscribiendo WABA en Meta: {exc}")
+
+    @app.get("/webhook", include_in_schema=True)
+    def verificar_webhook_meta(
+        hub_mode: Optional[str] = Query(default=None, alias="hub.mode"),
+        hub_verify_token: Optional[str] = Query(default=None, alias="hub.verify_token"),
+        hub_challenge: Optional[str] = Query(default=None, alias="hub.challenge"),
+    ):
+        esperado = os.getenv("WHATSAPP_VERIFY_TOKEN", "hermandad_dolores_webhook_2026").strip()
+        if hub_mode == "subscribe" and hub_verify_token == esperado and hub_challenge is not None:
+            return PlainTextResponse(content=hub_challenge, status_code=200)
+        raise HTTPException(status_code=403, detail="Token de verificación webhook inválido.")
+
+    @app.post("/webhook", include_in_schema=True)
+    async def recibir_webhook_meta(request: Request):
+        body = await request.json()
+        acciones_procesadas = []
+        for entry in body.get("entry", []):
+            for change in entry.get("changes", []):
+                value = change.get("value", {})
+                for msg in value.get("messages", []):
+                    remitente = msg.get("from", "")
+                    mtype = msg.get("type", "")
+                    accion_id = ""
+                    texto_entrante = ""
+                    if mtype == "interactive":
+                        br = msg.get("interactive", {}).get("button_reply", {})
+                        accion_id = br.get("id", "")
+                        texto_entrante = f"Botón: {br.get('title', accion_id)}"
+                    elif mtype == "button":
+                        accion_id = msg.get("button", {}).get("payload", "")
+                        texto_entrante = f"Botón: {msg.get('button', {}).get('text', accion_id)}"
+                    elif mtype == "text":
+                        texto_entrante = msg.get("text", {}).get("body", "").strip()
+                    else:
+                        texto_entrante = f"[{mtype or 'archivo'} no soportado por este canal]"
+                        app.state.notificador.enviar_texto_simple(
+                            remitente,
+                            "Por este canal solo recibimos mensajes de texto o selección de botones. Para documentos FONASA/CESFAM, ingrésalos como folio en el portal o preséntalos en tu policlínico.",
+                        )
+
+                    print(f"[WEBHOOK META] De={remitente} Tipo={mtype} Texto={texto_entrante}")
+                    if texto_entrante:
+                        app.state.repo.registrar_notificacion(
+                            None, "WHATSAPP", "CAMBIO_AGENDA", remitente, "ENVIADO_SIMULADO", f"[RECIBIDO] {texto_entrante}"[:295]
+                        )
+
+                    if accion_id.startswith("CONFIRMAR_"):
+                        cita_id = int(accion_id.split("_", 1)[1])
+                        try:
+                            cita = app.state.servicio.actualizar_confirmacion_cita(
+                                cita_id,
+                                {
+                                    "estado_confirmacion": "CONFIRMADA",
+                                    "canal": "WHATSAPP",
+                                    "observacion": "Paciente presionó «Confirmar asistencia» en WhatsApp.",
+                                    "usuario_nombre": "Bot WhatsApp (Paciente)",
+                                    "rol": "PACIENTE",
+                                },
+                            )
+                            app.state.notificador.enviar_texto_simple(
+                                remitente,
+                                f"¡Gracias! Tu asistencia para el {cita['fecha']} a las {cita['hora_inicio']} en {cita['policlinico_nombre']} quedó confirmada.",
+                            )
+                            acciones_procesadas.append({"cita_id": cita_id, "accion": "CONFIRMADA"})
+                        except Exception as exc:
+                            acciones_procesadas.append({"cita_id": cita_id, "error": str(exc)})
+
+                    elif accion_id.startswith("CANCELAR_"):
+                        cita_id = int(accion_id.split("_", 1)[1])
+                        try:
+                            cita = app.state.servicio.cancelar_cita(
+                                cita_id,
+                                {
+                                    "origen_cancelacion": "WHATSAPP_PACIENTE",
+                                    "motivo": "Paciente seleccionó «Cancelar mi hora» mediante botón de WhatsApp.",
+                                    "usuario_nombre": "Bot WhatsApp (Paciente)",
+                                    "rol": "PACIENTE",
+                                },
+                            )
+                            app.state.notificador.enviar_texto_simple(
+                                remitente,
+                                f"Tu cita del {cita['fecha']} a las {cita['hora_inicio']} en {cita['policlinico_nombre']} fue cancelada y el cupo quedó liberado.",
+                            )
+                            acciones_procesadas.append({"cita_id": cita_id, "accion": "CANCELADA"})
+                        except Exception as exc:
+                            acciones_procesadas.append({"cita_id": cita_id, "error": str(exc)})
+        return {"status": "ok", "acciones": acciones_procesadas}
 
     return app
 
