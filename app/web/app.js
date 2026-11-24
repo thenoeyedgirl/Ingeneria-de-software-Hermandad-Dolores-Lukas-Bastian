@@ -663,26 +663,6 @@ window.cambiarEspera = async (itemId, estado) => {
 };
 
 // ===================== PANEL ADMINISTRACIÓN + GRÁFICOS =====================
-function renderBarChart(containerId, items, colorClass = "") {
-  const el = document.getElementById(containerId);
-  if (!el) return;
-  if (!items.length) {
-    el.innerHTML = `<p class="muted">Sin datos suficientes todavía.</p>`;
-    return;
-  }
-  const maxVal = Math.max(...items.map(i => Number(i.value) || 0), 1);
-  el.innerHTML = items.map(it => {
-    const pct = Math.round(((Number(it.value) || 0) / maxVal) * 100);
-    const cls = it.color || colorClass;
-    return `
-      <div class="bar-row">
-        <div class="bar-meta"><span>${it.label}</span><span>${it.value}</span></div>
-        <div class="bar-track"><div class="bar-fill ${cls}" style="width:${pct}%"></div></div>
-      </div>
-    `;
-  }).join("");
-}
-
 async function cargarDatosAdmin() {
   const [bloques, rep, aud] = await Promise.all([
     api("/api/bloques"),
@@ -705,45 +685,8 @@ async function cargarDatosAdmin() {
     </tr>
   `).join("");
 
-  const inds = rep.indicadores_por_sede;
-  const totCitas = inds.reduce((a, x) => a + x.total_citas, 0);
-  const totAsist = inds.reduce((a, x) => a + x.asistidas, 0);
-  const totRes = inds.reduce((a, x) => a + x.reservadas, 0);
-  const totInas = inds.reduce((a, x) => a + x.inasistidas, 0);
-  const totCanc = inds.reduce((a, x) => a + x.canceladas, 0);
-  const totPend = inds.reduce((a, x) => a + x.pendientes_confirmacion, 0);
-  const totDisp = rep.ocupacion_por_sede.reduce((a, x) => a + x.bloques_disponibles, 0);
-
-  document.getElementById("kpiGrid").innerHTML = `
-    <div class="kpi-card"><div class="kpi-label">Citas registradas</div><div class="kpi-val">${totCitas}</div></div>
-    <div class="kpi-card"><div class="kpi-label">Citas asistidas</div><div class="kpi-val">${totAsist}</div></div>
-    <div class="kpi-card"><div class="kpi-label">Pendientes de confirmación</div><div class="kpi-val">${totPend}</div></div>
-    <div class="kpi-card"><div class="kpi-label">Cupos disponibles</div><div class="kpi-val">${totDisp}</div></div>
-  `;
-
-  renderBarChart("chartSedes", inds.map(r => ({ label: r.policlinico_nombre, value: r.total_citas })), "navy");
-  renderBarChart("chartEstados", [
-    { label: "Reservadas activas", value: totRes, color: "blue" },
-    { label: "Asistidas", value: totAsist, color: "green" },
-    { label: "Inasistidas", value: totInas, color: "amber" },
-    { label: "Canceladas", value: totCanc, color: "red" },
-  ]);
-  renderBarChart("chartEdad", (rep.caracterizacion_edad || []).map(x => ({ label: x.tramo, value: x.total })), "");
-  renderBarChart("chartNacionalidad", (rep.caracterizacion_nacionalidad || []).map(x => ({ label: x.nacionalidad, value: x.total })), "navy");
-
-  document.getElementById("tablaIndicadores").innerHTML = inds.map(r => `
-    <tr>
-      <td><strong>${r.policlinico_nombre}</strong></td>
-      <td>${r.modalidad}</td>
-      <td>${r.total_citas}</td>
-      <td>${r.reservadas}</td>
-      <td>${r.asistidas}</td>
-      <td>${r.inasistidas}</td>
-      <td>${r.canceladas}</td>
-      <td>${r.pendientes_confirmacion}</td>
-      <td><strong>${r.tasa_asistencia_pct} %</strong></td>
-    </tr>
-  `).join("");
+  // KPI, gráficos G0–G9 y tabla de indicadores viven en admin_graficos.js (filtros combinables, RF20)
+  if (window.cargarGraficosAdmin) cargarGraficosAdmin(rep);
 
   document.getElementById("tablaAuditoria").innerHTML = aud.map(a => `
     <tr>

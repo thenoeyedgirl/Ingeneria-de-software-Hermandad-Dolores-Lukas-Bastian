@@ -159,3 +159,16 @@ class IRepositorioCita(IRepositorioCupo, ABC):
     @abstractmethod
     def listar_auditoria(self, limite: int = 40) -> list[dict[str, Any]]:
         ...
+
+    # --- Gráficos y filtros de reportes (RF19–RF23, RNF03) ---
+    @abstractmethod
+    def obtener_dataset_reportes(self, filtros: dict[str, Any]) -> dict[str, Any]:
+        """Filas filtradas SIN datos personales para los gráficos y el CSV. Devuelve {citas, bloques, encuestas, catalogos}."""
+        ...
+
+    @abstractmethod
+    def registrar_auditoria(
+        self, usuario_nombre: str, rol: str, policlinico_id: Optional[int], operacion: str, entidad: str, entidad_id: Optional[int], detalle: str
+    ) -> None:
+        """Inserta un registro en la auditoría administrativa (p. ej. REPORTE_EXPORTAR, RF23/RF34)."""
+        ...

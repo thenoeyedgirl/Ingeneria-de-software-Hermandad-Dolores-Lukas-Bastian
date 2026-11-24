@@ -11,13 +11,13 @@
 
 Aplicación web en **Arquitectura en Capas** construida con **Python 3.13 + FastAPI**, **PostgreSQL 16/18** (`psycopg` v3) y frontend **HTML/CSS/JavaScript**:
 
-- `database/`: Scripts SQL reproducibles (`01_schema.sql`, `02_seed_ficticio.sql`, `03_seed_otros_policlinicos.sql`, `04_ampliar_ficha_mvp.sql`) con índice único parcial `ux_cita_bloque_activa` (0 % dobles reservas, `RNF04`), entidad `documentos_respaldo`, tabla `responsables` y 7 vistas SQL analíticas.
+- `database/`: Scripts SQL reproducibles (`01_schema.sql` … `05_vista_reportes.sql`, y `06_seed_historico_graficos.sql` opcional) con índice único parcial `ux_cita_bloque_activa` (0 % dobles reservas, `RNF04`), entidad `documentos_respaldo`, tabla `responsables` y 8 vistas SQL analíticas (incluye `v_reporte_citas`, sin datos personales).
 - `app/domain/`: Validador de RUT chileno módulo 11 (`rut.py`), enmascaramiento de privacidad `P10` y **Patrón State** (`IEstadoCita` + `EstadoConfirmacion` separado para cumplir `RF09`: *«el silencio no cancela»*).
 - `app/repositories/`: **Patrón Repository** (`IRepositorioCita`, `IRepositorioCupo`), con `RepositorioCitaSQL` (PostgreSQL con `SELECT ... FOR UPDATE`) y `RepositorioCitaMemoria` (para pruebas unitarias aisladas).
 - `app/services/`: **Patrón Facade** (`ServicioAgendamiento`) e **`IGestorNotificaciones`** desacoplado con dos implementaciones:
   - `GestorNotificacionesMetaWhatsApp`: integración directa con **Meta WhatsApp Cloud API** (recordatorio 24 h con botones interactivos *«Confirmar asistencia»* / *«Cancelar mi hora»*, recordatorio anticipado de 15 días, mensajes manuales de texto y webhook bidireccional `GET/POST /webhook`).
   - `GestorNotificacionesSimulado`: modo local automático cuando no existen credenciales de Meta en `.env` (permite evaluar todo el sistema sin cuenta de Meta).
-- `app/web/`: Portal Pacientes (horas disponibles con selección directa, solicitud asistida con switch de tutor/apoderado obligatorio en menores de 18 años, folio documental opcional, pantalla de resumen con encuesta y consulta por RUT protegida) y Panel Institucional con barra lateral diferenciada para **TENS/TONS**, **Telemedicina** y **Administración** (con gráficos de gestión y caracterización).
+- `app/web/`: Portal Pacientes (horas disponibles con selección directa, solicitud asistida con switch de tutor/apoderado obligatorio en menores de 18 años, folio documental opcional, pantalla de resumen con encuesta y consulta por RUT protegida) y Panel Institucional con barra lateral diferenciada para **TENS/TONS**, **Telemedicina** y **Administración** (con filtros combinables y 10 gráficos interactivos con Chart.js local).
 
 > **Frontera administrativa (`RF18`):** El sistema no incluye ficha clínica electrónica, videollamada propia ni código de reserva (`P6` descartado).
 
@@ -34,7 +34,7 @@ Aplicación web en **Arquitectura en Capas** construida con **Python 3.13 + Fast
 
 ## 3. Instalación y ejecución local
 
-### Paso 1: Crear la base de datos y ejecutar los 4 scripts SQL en orden
+### Paso 1: Crear la base de datos y ejecutar los scripts SQL en orden
 
 Desde `psql` (o en **pgAdmin 4 → Query Tool** sobre la base `hermandad_dolores_mvp`):
 
@@ -44,7 +44,12 @@ psql -U postgres -d hermandad_dolores_mvp -f database/01_schema.sql
 psql -U postgres -d hermandad_dolores_mvp -f database/02_seed_ficticio.sql
 psql -U postgres -d hermandad_dolores_mvp -f database/03_seed_otros_policlinicos.sql
 psql -U postgres -d hermandad_dolores_mvp -f database/04_ampliar_ficha_mvp.sql
+psql -U postgres -d hermandad_dolores_mvp -f database/05_vista_reportes.sql
+# Opcional (solo demo de gráficos): ~3.000 citas históricas 100 % ficticias de los últimos 6 meses
+psql -U postgres -d hermandad_dolores_mvp -f database/06_seed_historico_graficos.sql
 ```
+
+> `05` y `06` se pueden ejecutar varias veces sin error. `06` borra solo lo que insertó en su corrida anterior.
 
 ### Paso 2: Crear entorno virtual (`venv`) e instalar dependencias
 
@@ -122,7 +127,31 @@ Si se configuran `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID` y `WHATSAPP_TEST_T
 ```powershell
 python -m pytest -v
 ```
-*(También ejecutables con `python -m unittest discover -s tests -v`).* Incluye 10 pruebas de dominio, concurrencia anti doble reserva (`RNF04`), regla `RF09` (*el silencio no cancela*), consulta protegida `P10`, reportes CSV y webhook interactivo de Meta WhatsApp.
+*(También ejecutables con `python -m unittest discover -s tests -v`).* Incluye 20 pruebas (10 de dominio y API + 10 de filtros y gráficos): dominio, concurrencia anti doble reserva (`RNF04`), regla `RF09` (*el silencio no cancela*), consulta protegida `P10`, reportes CSV y webhook interactivo de Meta WhatsApp.
+
+---
+
+## 6b. Filtros y gráficos de Administración
+
+`#/admin/reportes`: una barra única de filtros (período, agrupación día/semana/mes/semestre/año, tipo de fecha —de la cita o de solicitud—, policlínico, modalidad, especialidad, profesional, estado y canal) se aplica a los KPI, los gráficos, la tabla de indicadores y el CSV.
+
+| Gráfico | Qué muestra |
+|---|---|
+| G0 Explorador | Métrica × dimensión × desglose × tipo, con hasta 5 vistas guardadas |
+| G1 Citas en el tiempo | Líneas por período, separables por estado, policlínico, especialidad o profesional |
+| G2 Horas más demandadas | Barras por hora de inicio (08–19 h) |
+| G3 Citas por policlínico | Apiladas por estado (Telemedicina incluida) |
+| G4 Citas por profesional | 10 primeros + «Otros» |
+| G5 Tasas por policlínico | Asistencia, inasistencia, cancelación, confirmación y «confirma y no asiste» |
+| G6 Ocupación de bloques | Ocupados ÷ publicados |
+| G7 Caracterización | Tramo etario o nacionalidad (pacientes únicos; grupos < 3 en «Otras») |
+| G8 Canal de registro / G9 Encuestas post-atención | Distribuciones |
+
+- «Elegir qué ver» oculta/muestra gráficos (se recuerda en el navegador); «Ver tabla» muestra los datos de cada gráfico (accesibilidad); las tasas sin datos se muestran como «—», nunca «0 %».
+- **Exportar CSV (filtrado):** `GET /api/reportes/dataset.csv` (UTF-8 con BOM) y deja `REPORTE_EXPORTAR` en la auditoría. El formato definitivo depende de la Fundación (R07).
+- `GET /api/reportes/dataset` entrega las filas filtradas **sin RUT, nombre, teléfono ni correo** (RNF03). Como en el resto de la API de esta versión, no valida sesión: la vista de Administración envía `rol=ADMINISTRACION` y `usuario` para etiquetar la auditoría.
+- Chart.js 4.4.4 está guardado en `app/web/vendor/` (la demo funciona sin internet).
+- Con el seed `06`, los períodos pasados muestran ocupación ≈ 100 %: los bloques pasados se crean `OCUPADO` u `OCULTO` para que no aparezcan como disponibles en el agendamiento.
 
 ---
 

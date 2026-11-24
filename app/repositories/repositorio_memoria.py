@@ -9,6 +9,7 @@ from datetime import date, datetime, timedelta
 import threading
 from typing import Any, Optional
 
+from app.domain.reportes import tramo_etario
 from app.repositories.interfaces import (
     ErrorConflictoCupo,
     ErrorRecursoNoEncontrado,
@@ -530,3 +531,73 @@ class RepositorioCitaMemoria(IRepositorioCita):
 
     def listar_auditoria(self, limite: int = 40) -> list[dict[str, Any]]:
         return self.auditoria[:limite]
+
+    # --- Gráficos y filtros de reportes (RF19–RF23, RNF03) ---
+    def obtener_dataset_reportes(self, filtros: dict[str, Any]) -> dict[str, Any]:
+        f = filtros or {}
+        clave_fecha = "fecha_solicitud" if f.get("tipo_fecha") == "solicitud" else "fecha_cita"
+        citas = []
+        for c in self.citas:
+            d = self._detalle_cita(c)
+            pac = self._pac(c["paciente_id"])
+            fila = {
+                "cita_id": d["cita_id"], "fecha_cita": d["fecha"], "hora_inicio": d["hora_inicio"],
+                "fecha_solicitud": str(c["creada_en"])[:10], "estado_cita": d["estado_cita"],
+                "estado_confirmacion": d["estado_confirmacion"], "canal_registro": d["canal_registro"],
+                "origen_cancelacion": d["origen_cancelacion"], "policlinico_id": d["policlinico_id"],
+                "policlinico_nombre": d["policlinico_nombre"], "modalidad": d["modalidad"],
+                "especialidad_id": d["especialidad_id"], "especialidad_nombre": d["especialidad_nombre"],
+                "profesional_id": d["profesional_id"], "profesional_nombre": d["profesional_nombre"],
+                "tramo_etario": tramo_etario(pac.get("fecha_nacimiento")),
+                "nacionalidad": (pac.get("nacionalidad") or "").strip() or "Sin dato",
+                "paciente_ref": pac["id"],
+            }
+            if f.get("desde") and fila[clave_fecha] < f["desde"]:
+                continue
+            if f.get("hasta") and fila[clave_fecha] > f["hasta"]:
+                continue
+            if any(f.get(k) is not None and fila[k] != f[k] for k in ("policlinico_id", "modalidad", "especialidad_id", "profesional_id", "estado_cita", "canal_registro")):
+                continue
+            citas.append(fila)
+        citas.sort(key=lambda x: (x["fecha_cita"], x["hora_inicio"], x["cita_id"]))
+
+        def _coincide_bloque(b: dict[str, Any]) -> bool:
+            pol = self._pol(b["policlinico_id"])
+            return not (
+                (f.get("policlinico_id") is not None and b["policlinico_id"] != f["policlinico_id"])
+                or (f.get("modalidad") is not None and pol["modalidad"] != f["modalidad"])
+                or (f.get("especialidad_id") is not None and b["especialidad_id"] != f["especialidad_id"])
+                or (f.get("profesional_id") is not None and b["profesional_id"] != f["profesional_id"])
+            )
+
+        bloques = [
+            {"fecha": b["fecha"], "hora_inicio": b["hora_inicio"], "policlinico_id": b["policlinico_id"], "profesional_id": b["profesional_id"],
+             "especialidad_id": b["especialidad_id"], "estado_bloque": b["estado_bloque"], "publicado": b["publicado"]}
+            for b in self.bloques
+            if _coincide_bloque(b)
+            and not (f.get("desde") and b["fecha"] < f["desde"])
+            and not (f.get("hasta") and b["fecha"] > f["hasta"])
+        ]
+        encuestas = []
+        for e in self.encuestas:
+            cita = next((c for c in self.citas if c["id"] == e.get("cita_id")), None)
+            b = self._bloque(cita["bloque_id"]) if cita else None
+            dia = str(e["registrada_en"])[:10]
+            if f.get("desde") and dia < f["desde"]:
+                continue
+            if f.get("hasta") and dia > f["hasta"]:
+                continue
+            if any(f.get(k) is not None for k in ("policlinico_id", "modalidad", "especialidad_id", "profesional_id")) and (b is None or not _coincide_bloque(b)):
+                continue
+            encuestas.append({"fecha": dia, "policlinico_id": b["policlinico_id"] if b else None, "puntaje": e["puntaje"], "tipo": e["tipo"]})
+        return {
+            "citas": citas, "bloques": bloques, "encuestas": encuestas,
+            "catalogos": {
+                "policlinicos": [{"id": p["id"], "nombre": p["nombre"], "modalidad": p["modalidad"]} for p in self.policlinicos],
+                "especialidades": [{"id": e["id"], "nombre": e["nombre"]} for e in self.especialidades],
+                "profesionales": [{"id": p["id"], "nombre": p["nombre_completo"], "especialidad_id": p["especialidad_id"], "policlinico_id": p["policlinico_id"]} for p in self.profesionales],
+            },
+        }
+
+    def registrar_auditoria(self, usuario_nombre: str, rol: str, policlinico_id: Optional[int], operacion: str, entidad: str, entidad_id: Optional[int], detalle: str) -> None:
+        self._auditar(usuario_nombre, rol, policlinico_id, operacion, entidad, entidad_id, detalle)
