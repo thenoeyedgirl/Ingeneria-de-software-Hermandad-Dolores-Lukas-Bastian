@@ -13,7 +13,7 @@ from typing import Optional
 
 from datetime import date, timedelta
 from fastapi import Body, FastAPI, HTTPException, Query, Request
-from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
+from fastapi.responses import FileResponse, PlainTextResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 try:
@@ -23,6 +23,7 @@ except ImportError:
     pass
 
 from app.domain.estados import ErrorTransicionEstado
+from app.domain.reportes import COLUMNAS_CSV, celda_csv_segura, normalizar_filtros
 from app.domain.modelos import (
     AsistenciaRequest,
     BloqueCreate,
@@ -295,6 +296,51 @@ def crear_app(repo: Optional[IRepositorioCita] = None) -> FastAPI:
             iter([buf.getvalue()]),
             media_type="text/csv",
             headers={"Content-Disposition": "attachment; filename=reporte_indicadores_hermandad_dolores.csv"},
+        )
+
+    # --- Gráficos y filtros de Administración: dataset sin datos personales (RF19–RF23, RNF03) ---
+    # Nota RF24: hoy la API no valida sesión (pendiente general del proyecto). Estos endpoints solo los usa la vista de
+    # Administración, cuyo frontend envía rol=ADMINISTRACION; si se agrega autenticación real, se protegen como el resto.
+    def _filtros_dataset(desde, hasta, tipo_fecha, policlinico_id, modalidad, especialidad_id, profesional_id, estado_cita, canal_registro) -> dict:
+        try:
+            return normalizar_filtros(desde, hasta, tipo_fecha, policlinico_id, modalidad, especialidad_id, profesional_id, estado_cita, canal_registro)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    @app.get("/api/reportes/dataset")
+    def reportes_dataset(
+        desde: Optional[str] = None, hasta: Optional[str] = None, tipo_fecha: Optional[str] = None,
+        policlinico_id: Optional[int] = None, modalidad: Optional[str] = None, especialidad_id: Optional[int] = None,
+        profesional_id: Optional[int] = None, estado_cita: Optional[str] = None, canal_registro: Optional[str] = None,
+    ):
+        filtros = _filtros_dataset(desde, hasta, tipo_fecha, policlinico_id, modalidad, especialidad_id, profesional_id, estado_cita, canal_registro)
+        return {"filtros_aplicados": filtros, **app.state.repo.obtener_dataset_reportes(filtros)}
+
+    @app.get("/api/reportes/dataset.csv")
+    def reportes_dataset_csv(
+        desde: Optional[str] = None, hasta: Optional[str] = None, tipo_fecha: Optional[str] = None,
+        policlinico_id: Optional[int] = None, modalidad: Optional[str] = None, especialidad_id: Optional[int] = None,
+        profesional_id: Optional[int] = None, estado_cita: Optional[str] = None, canal_registro: Optional[str] = None,
+        usuario: Optional[str] = None, rol: Optional[str] = None,
+    ):
+        """CSV UTF-8 con BOM (Excel muestra bien las tildes). Registra REPORTE_EXPORTAR en la auditoría (RF23, RF34).
+        El formato definitivo de exportación depende de la Fundación (R07)."""
+        filtros = _filtros_dataset(desde, hasta, tipo_fecha, policlinico_id, modalidad, especialidad_id, profesional_id, estado_cita, canal_registro)
+        citas = app.state.repo.obtener_dataset_reportes(filtros)["citas"]
+        buf = io.StringIO()
+        writer = csv.writer(buf, lineterminator="\r\n")
+        writer.writerow([titulo for _, titulo in COLUMNAS_CSV])
+        for c in citas:
+            writer.writerow([celda_csv_segura(c.get(clave)) for clave, _ in COLUMNAS_CSV])
+        resumen = ", ".join(f"{k}={v}" for k, v in filtros.items())
+        app.state.repo.registrar_auditoria(
+            (usuario or "Administración Central (Demo)")[:120], (rol or "ADMINISTRACION")[:30], filtros.get("policlinico_id"),
+            "REPORTE_EXPORTAR", "reportes", None, f"Exportación CSV del dataset filtrado ({len(citas)} filas). Filtros: {resumen}"[:400],
+        )
+        return Response(
+            content=("\ufeff" + buf.getvalue()).encode("utf-8"),
+            media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f"attachment; filename=reporte_citas_{date.today().isoformat()}.csv"},
         )
 
     @app.get("/api/auditoria")

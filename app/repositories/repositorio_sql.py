@@ -762,3 +762,101 @@ class RepositorioCitaSQL(IRepositorioCita):
         with self._connect() as conn, conn.cursor() as cur:
             cur.execute("SELECT * FROM v_auditoria_reciente LIMIT %s", (limite,))
             return _serializar_lista(cur.fetchall())
+
+    # --- Gráficos y filtros de reportes (RF19–RF23, RNF03) ---
+    def obtener_dataset_reportes(self, filtros: dict[str, Any]) -> dict[str, Any]:
+        f = filtros or {}
+        col_fecha = "fecha_solicitud" if f.get("tipo_fecha") == "solicitud" else "fecha_cita"
+        # Citas (vista v_reporte_citas: solo dimensiones, sin datos personales)
+        cl: list[str] = []
+        pr: list[Any] = []
+        if f.get("desde"):
+            cl.append(f"{col_fecha} >= %s")
+            pr.append(f["desde"])
+        if f.get("hasta"):
+            cl.append(f"{col_fecha} <= %s")
+            pr.append(f["hasta"])
+        for campo in ("policlinico_id", "modalidad", "especialidad_id", "profesional_id", "estado_cita", "canal_registro"):
+            if f.get(campo) is not None:
+                cl.append(f"{campo} = %s")
+                pr.append(f[campo])
+        where_c = ("WHERE " + " AND ".join(cl)) if cl else ""
+        # Bloques (ocupación): misma ventana de fechas sobre la fecha del bloque
+        bl: list[str] = []
+        bp: list[Any] = []
+        if f.get("desde"):
+            bl.append("b.fecha >= %s")
+            bp.append(f["desde"])
+        if f.get("hasta"):
+            bl.append("b.fecha <= %s")
+            bp.append(f["hasta"])
+        for campo, col in (("policlinico_id", "b.policlinico_id"), ("modalidad", "pol.modalidad"), ("especialidad_id", "b.especialidad_id"), ("profesional_id", "b.profesional_id")):
+            if f.get(campo) is not None:
+                bl.append(f"{col} = %s")
+                bp.append(f[campo])
+        where_b = ("WHERE " + " AND ".join(bl)) if bl else ""
+        # Encuestas: fecha de registro; sede/especialidad/profesional a través de la cita
+        el: list[str] = []
+        ep: list[Any] = []
+        if f.get("desde"):
+            el.append("e.registrada_en::date >= %s")
+            ep.append(f["desde"])
+        if f.get("hasta"):
+            el.append("e.registrada_en::date <= %s")
+            ep.append(f["hasta"])
+        for campo, col in (("policlinico_id", "b.policlinico_id"), ("modalidad", "pol.modalidad"), ("especialidad_id", "b.especialidad_id"), ("profesional_id", "b.profesional_id")):
+            if f.get(campo) is not None:
+                el.append(f"{col} = %s")
+                ep.append(f[campo])
+        where_e = ("WHERE " + " AND ".join(el)) if el else ""
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT cita_id, fecha_cita, hora_inicio, fecha_solicitud, estado_cita, estado_confirmacion,
+                       canal_registro, origen_cancelacion, policlinico_id, policlinico_nombre, modalidad,
+                       especialidad_id, especialidad_nombre, profesional_id, profesional_nombre,
+                       tramo_etario, nacionalidad, paciente_ref
+                FROM v_reporte_citas {where_c}
+                ORDER BY fecha_cita, hora_inicio, cita_id
+                """,
+                pr,
+            )
+            citas = _serializar_lista(cur.fetchall())
+            cur.execute(
+                f"""
+                SELECT b.fecha, b.hora_inicio, b.policlinico_id, b.profesional_id, b.especialidad_id, b.estado_bloque, b.publicado
+                FROM bloques_horarios b JOIN policlinicos pol ON pol.id = b.policlinico_id
+                {where_b}
+                ORDER BY b.fecha, b.hora_inicio
+                """,
+                bp,
+            )
+            bloques = _serializar_lista(cur.fetchall())
+            cur.execute(
+                f"""
+                SELECT e.registrada_en::date AS fecha, b.policlinico_id, e.puntaje, e.tipo
+                FROM encuestas e
+                LEFT JOIN citas c ON c.id = e.cita_id
+                LEFT JOIN bloques_horarios b ON b.id = c.bloque_id
+                LEFT JOIN policlinicos pol ON pol.id = b.policlinico_id
+                {where_e}
+                ORDER BY e.registrada_en
+                """,
+                ep,
+            )
+            encuestas = _serializar_lista(cur.fetchall())
+            cur.execute("SELECT id, nombre, modalidad FROM policlinicos ORDER BY id")
+            pols = _serializar_lista(cur.fetchall())
+            cur.execute("SELECT id, nombre FROM especialidades ORDER BY id")
+            esps = _serializar_lista(cur.fetchall())
+            cur.execute("SELECT id, nombre_completo AS nombre, especialidad_id, policlinico_id FROM profesionales ORDER BY id")
+            profs = _serializar_lista(cur.fetchall())
+        return {"citas": citas, "bloques": bloques, "encuestas": encuestas,
+                "catalogos": {"policlinicos": pols, "especialidades": esps, "profesionales": profs}}
+
+    def registrar_auditoria(
+        self, usuario_nombre: str, rol: str, policlinico_id: Optional[int], operacion: str, entidad: str, entidad_id: Optional[int], detalle: str
+    ) -> None:
+        with self._connect() as conn:
+            with conn.transaction(), conn.cursor() as cur:
+                self._auditar(cur, usuario_nombre, rol, policlinico_id, operacion, entidad, entidad_id, detalle[:400])

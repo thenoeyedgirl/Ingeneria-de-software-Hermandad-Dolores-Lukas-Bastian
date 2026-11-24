@@ -564,31 +564,281 @@
 
         <!-- ADMIN 2: REPORTES E INDICADORES CON GRÁFICOS -->
         <section id="route-admin-reportes" class="route-view">
+          <!-- Barra única de filtros (RF20): se aplica a KPI, gráficos, tabla y CSV -->
+          <div class="card ga-filtros-card">
+            <div class="ga-filtros" role="group" aria-label="Filtros principales de reportes">
+              <label>Período
+                <select id="gaPeriodo">
+                  <option value="hoy">Hoy</option>
+                  <option value="7d">7 días</option>
+                  <option value="mes">Mes (30 días)</option>
+                  <option value="semestre" selected>Semestre (6 meses)</option>
+                  <option value="anio">Año (12 meses)</option>
+                  <option value="personalizado">Personalizado</option>
+                </select>
+              </label>
+              <label>Desde<input type="date" id="gaDesde" /></label>
+              <label>Hasta<input type="date" id="gaHasta" /></label>
+              <label>Agrupación temporal
+                <select id="gaAgrupacion">
+                  <option value="dia">Día</option><option value="semana">Semana</option>
+                  <option value="mes" selected>Mes</option><option value="semestre">Semestre</option><option value="anio">Año</option>
+                </select>
+              </label>
+              <label>Tipo de fecha
+                <select id="gaTipoFecha">
+                  <option value="cita">Fecha de la cita</option>
+                  <option value="solicitud">Fecha en que se pidió la hora</option>
+                </select>
+              </label>
+              <label>Policlínico<select id="gaPoli"><option value="">Todos</option></select></label>
+            </div>
+            <details class="ga-mas-filtros" id="gaMasFiltros">
+              <summary>Más filtros <span class="ga-badge hidden" id="gaMasContador"></span><span class="ga-sec-sub">modalidad, especialidad, profesional, estado y canal</span></summary>
+              <div class="ga-filtros" role="group" aria-label="Filtros adicionales de reportes">
+              <label>Modalidad
+                <select id="gaModalidad"><option value="">Todas</option><option value="PRESENCIAL">Presencial</option><option value="TELEMEDICINA">Telemedicina</option></select>
+              </label>
+              <label>Especialidad<select id="gaEsp"><option value="">Todas</option></select></label>
+              <label>Profesional<select id="gaProf"><option value="">Todos</option></select></label>
+              <label>Estado de la cita
+                <select id="gaEstado"><option value="">Todos</option><option value="RESERVADA">Reservada</option><option value="ASISTIDA">Asistida</option><option value="INASISTIDA">Inasistida</option><option value="CANCELADA">Cancelada</option></select>
+              </label>
+              <label>Canal de registro
+                <select id="gaCanal"><option value="">Todos</option><option value="ASISTIDO_PRESENCIAL">Presencial (mesón)</option><option value="ASISTIDO_TELEFONO">Telefónico</option><option value="SOLICITUD_WEB">Solicitud web</option></select>
+              </label>
+              </div>
+            </details>
+            <div class="ga-acciones">
+              <button type="button" class="btn btn-primary" id="gaAplicar">Aplicar</button>
+              <button type="button" class="btn btn-ghost" id="gaLimpiar">Limpiar</button>
+              <button type="button" class="btn btn-secondary" id="gaExportar">Exportar CSV (filtrado)</button>
+              <button type="button" class="btn btn-ghost" id="gaExpandir">Expandir todo</button>
+              <button type="button" class="btn btn-ghost" id="gaContraer">Contraer todo</button>
+              <details class="ga-visibilidad">
+                <summary class="btn btn-ghost">Elegir qué ver</summary>
+                <div class="ga-vis-panel">
+                  <div id="gaVisChecks" class="ga-vis-checks"></div>
+                  <div class="ga-vis-botones">
+                    <button type="button" class="btn-sm btn-neutral" id="gaVisTodo">Mostrar todo</button>
+                    <button type="button" class="btn-sm btn-neutral" id="gaVisReset">Restablecer</button>
+                  </div>
+                </div>
+              </details>
+            </div>
+            <p class="ga-resumen-filtros" id="gaResumenFiltros" aria-live="polite"></p>
+            <p class="ga-nota">El CSV se exporta con los mismos filtros y la descarga queda registrada en la auditoría. El formato definitivo de exportación depende de la Fundación (R07).</p>
+          </div>
+
           <div class="kpi-grid" id="kpiGrid"></div>
 
-          <div class="charts-grid">
-            <div class="card">
-              <h3>Citas totales por policlínico y Telemedicina</h3>
-              <div id="chartSedes" class="bar-chart"></div>
-            </div>
-            <div class="card">
-              <h3>Distribución por estado de cita</h3>
-              <div id="chartEstados" class="bar-chart"></div>
-            </div>
-            <div class="card">
-              <h3>Caracterización de pacientes por tramo etario</h3>
-              <div id="chartEdad" class="bar-chart"></div>
-            </div>
-            <div class="card">
-              <h3>Caracterización de pacientes por nacionalidad</h3>
-              <div id="chartNacionalidad" class="bar-chart"></div>
-            </div>
+          <div class="ga-secciones" id="gaGrid">
+            <details class="ga-seccion" data-seccion="tiempo" open>
+              <summary><span class="ga-sec-titulo">Demanda en el tiempo</span><span class="ga-sec-sub">Citas por período y horas más demandadas (G1, G2)</span></summary>
+              <div class="ga-grid">
+            <article class="card ga-card" data-ga="G1">
+              <div class="ga-card-head">
+                <div>
+                  <h3>Citas en el tiempo</h3>
+                  <p class="ga-sub">G1 · RF20, RF21</p>
+                </div>
+                <div class="ga-card-tools">
+                  <label class="ga-inline">Separar por<select id="gaG1Sep"><option value="total">Total</option><option value="estado">Estado</option><option value="policlinico">Policlínico</option><option value="especialidad">Especialidad</option><option value="profesional">Profesional</option></select></label>
+                  <button type="button" class="btn-sm btn-neutral ga-btn-tabla" aria-expanded="false" aria-controls="gaTabla-G1">Ver tabla</button>
+                </div>
+              </div>
+              <div class="ga-canvas-wrap"><canvas id="gaCanvas-G1" role="img" aria-label="Citas en el tiempo"></canvas></div>
+              <p class="ga-empty hidden">Sin datos para los filtros seleccionados</p>
+              <div class="ga-tabla hidden" id="gaTabla-G1"></div>
+            </article>
+            <article class="card ga-card" data-ga="G2">
+              <div class="ga-card-head">
+                <div>
+                  <h3>Horas más demandadas</h3>
+                  <p class="ga-sub">G2 · RF21</p>
+                </div>
+                <div class="ga-card-tools">
+                  
+                  <button type="button" class="btn-sm btn-neutral ga-btn-tabla" aria-expanded="false" aria-controls="gaTabla-G2">Ver tabla</button>
+                </div>
+              </div>
+              <div class="ga-canvas-wrap"><canvas id="gaCanvas-G2" role="img" aria-label="Horas más demandadas"></canvas></div>
+              <p class="ga-empty hidden">Sin datos para los filtros seleccionados</p>
+              <div class="ga-tabla hidden" id="gaTabla-G2"></div>
+            </article>
+              </div>
+            </details>
+            <details class="ga-seccion" data-seccion="sedes">
+              <summary><span class="ga-sec-titulo">Sedes y profesionales</span><span class="ga-sec-sub">Citas por policlínico y profesional, tasas y ocupación (G3–G6)</span></summary>
+              <div class="ga-grid">
+            <article class="card ga-card" data-ga="G3">
+              <div class="ga-card-head">
+                <div>
+                  <h3>Citas por policlínico</h3>
+                  <p class="ga-sub">G3 · RF19, RF35 · Telemedicina incluida</p>
+                </div>
+                <div class="ga-card-tools">
+                  
+                  <button type="button" class="btn-sm btn-neutral ga-btn-tabla" aria-expanded="false" aria-controls="gaTabla-G3">Ver tabla</button>
+                </div>
+              </div>
+              <div class="ga-canvas-wrap"><canvas id="gaCanvas-G3" role="img" aria-label="Citas por policlínico"></canvas></div>
+              <p class="ga-empty hidden">Sin datos para los filtros seleccionados</p>
+              <div class="ga-tabla hidden" id="gaTabla-G3"></div>
+            </article>
+            <article class="card ga-card" data-ga="G4">
+              <div class="ga-card-head">
+                <div>
+                  <h3>Citas por profesional</h3>
+                  <p class="ga-sub">G4 · RF19, RF21</p>
+                </div>
+                <div class="ga-card-tools">
+                  <label class="ga-inline">Métrica<select id="gaG4Metrica"><option value="total">Total</option><option value="asistidas">Asistidas</option><option value="inasistidas">Inasistidas</option></select></label>
+                  <button type="button" class="btn-sm btn-neutral ga-btn-tabla" aria-expanded="false" aria-controls="gaTabla-G4">Ver tabla</button>
+                </div>
+              </div>
+              <div class="ga-canvas-wrap"><canvas id="gaCanvas-G4" role="img" aria-label="Citas por profesional"></canvas></div>
+              <p class="ga-empty hidden">Sin datos para los filtros seleccionados</p>
+              <div class="ga-tabla hidden" id="gaTabla-G4"></div>
+            </article>
+            <article class="card ga-card" data-ga="G5">
+              <div class="ga-card-head">
+                <div>
+                  <h3>Tasas por policlínico</h3>
+                  <p class="ga-sub">G5 · RF21</p>
+                </div>
+                <div class="ga-card-tools">
+                  
+                  <button type="button" class="btn-sm btn-neutral ga-btn-tabla" aria-expanded="false" aria-controls="gaTabla-G5">Ver tabla</button>
+                </div>
+              </div>
+              <div class="ga-canvas-wrap"><canvas id="gaCanvas-G5" role="img" aria-label="Tasas por policlínico"></canvas></div>
+              <p class="ga-empty hidden">Sin datos para los filtros seleccionados</p>
+              <div class="ga-tabla hidden" id="gaTabla-G5"></div>
+            </article>
+            <article class="card ga-card" data-ga="G6">
+              <div class="ga-card-head">
+                <div>
+                  <h3>Ocupación de bloques</h3>
+                  <p class="ga-sub">G6 · RF21</p>
+                </div>
+                <div class="ga-card-tools">
+                  
+                  <button type="button" class="btn-sm btn-neutral ga-btn-tabla" aria-expanded="false" aria-controls="gaTabla-G6">Ver tabla</button>
+                </div>
+              </div>
+              <div class="ga-canvas-wrap"><canvas id="gaCanvas-G6" role="img" aria-label="Ocupación de bloques"></canvas></div>
+              <p class="ga-empty hidden">Sin datos para los filtros seleccionados</p>
+              <div class="ga-tabla hidden" id="gaTabla-G6"></div>
+            </article>
+              </div>
+            </details>
+            <details class="ga-seccion" data-seccion="pacientes">
+              <summary><span class="ga-sec-titulo">Pacientes, canales y encuestas</span><span class="ga-sec-sub">Caracterización, canal de registro y encuestas post-atención (G7–G9)</span></summary>
+              <div class="ga-grid">
+            <article class="card ga-card" data-ga="G7">
+              <div class="ga-card-head">
+                <div>
+                  <h3>Caracterización de pacientes <span class="ga-n" id="gaG7N">n = 0</span></h3>
+                  <p class="ga-sub">G7 · RF21, RNF03</p>
+                </div>
+                <div class="ga-card-tools">
+                  <label class="ga-inline">Ver por<select id="gaG7Modo"><option value="tramo">Tramo etario</option><option value="nacionalidad">Nacionalidad</option></select></label>
+                  <button type="button" class="btn-sm btn-neutral ga-btn-tabla" aria-expanded="false" aria-controls="gaTabla-G7">Ver tabla</button>
+                </div>
+              </div>
+              <div class="ga-canvas-wrap"><canvas id="gaCanvas-G7" role="img" aria-label="Caracterización de pacientes"></canvas></div>
+              <p class="ga-empty hidden">Sin datos para los filtros seleccionados</p>
+              <div class="ga-tabla hidden" id="gaTabla-G7"></div>
+            </article>
+            <article class="card ga-card" data-ga="G8">
+              <div class="ga-card-head">
+                <div>
+                  <h3>Canal de registro</h3>
+                  <p class="ga-sub">G8 · RF21</p>
+                </div>
+                <div class="ga-card-tools">
+                  
+                  <button type="button" class="btn-sm btn-neutral ga-btn-tabla" aria-expanded="false" aria-controls="gaTabla-G8">Ver tabla</button>
+                </div>
+              </div>
+              <div class="ga-canvas-wrap"><canvas id="gaCanvas-G8" role="img" aria-label="Canal de registro"></canvas></div>
+              <p class="ga-empty hidden">Sin datos para los filtros seleccionados</p>
+              <div class="ga-tabla hidden" id="gaTabla-G8"></div>
+            </article>
+            <article class="card ga-card" data-ga="G9">
+              <div class="ga-card-head">
+                <div>
+                  <h3>Encuestas post-atención <span class="ga-n" id="gaG9N">n = 0</span></h3>
+                  <p class="ga-sub">G9 · RF22 · separadas del resto</p>
+                </div>
+                <div class="ga-card-tools">
+                  
+                  <button type="button" class="btn-sm btn-neutral ga-btn-tabla" aria-expanded="false" aria-controls="gaTabla-G9">Ver tabla</button>
+                </div>
+              </div>
+              <div class="ga-canvas-wrap"><canvas id="gaCanvas-G9" role="img" aria-label="Encuestas post-atención"></canvas></div>
+              <p class="ga-empty hidden">Sin datos para los filtros seleccionados</p>
+              <div class="ga-tabla hidden" id="gaTabla-G9"></div>
+            </article>
+              </div>
+            </details>
+            <details class="ga-seccion" data-seccion="explorador">
+              <summary><span class="ga-sec-titulo">Explorador general</span><span class="ga-sec-sub">Arma tu propio gráfico: métrica × dimensión × desglose (G0)</span></summary>
+              <div class="ga-grid">
+            <article class="card ga-card ga-ancho" data-ga="G0">
+              <div class="ga-card-head">
+                <div>
+                  <h3>Explorador general</h3>
+                  <p class="ga-sub">G0 · RF20, RF22 · arma tu propio gráfico</p>
+                </div>
+                <div class="ga-card-tools">
+                  <button type="button" class="btn-sm btn-neutral ga-btn-tabla" aria-expanded="false" aria-controls="gaTabla-G0">Ver tabla</button>
+                </div>
+              </div>
+              <div class="ga-explorador">
+                <label class="ga-inline">Métrica
+                  <select id="gaG0Metrica">
+                    <option value="total">Citas totales</option><option value="asistidas">Citas asistidas</option><option value="inasistidas">Citas inasistidas</option>
+                    <option value="canceladas">Citas canceladas</option><option value="pct_asistencia">% asistencia</option><option value="pct_inasistencia">% inasistencia</option>
+                    <option value="pct_confirmacion">% confirmación</option><option value="ocupacion">Ocupación %</option>
+                  </select>
+                </label>
+                <label class="ga-inline">Dimensión (eje X)
+                  <select id="gaG0Dim">
+                    <option value="periodo">Período</option><option value="hora">Hora del día</option><option value="policlinico">Policlínico</option>
+                    <option value="especialidad">Especialidad</option><option value="profesional">Profesional</option><option value="tramo">Tramo etario</option>
+                    <option value="nacionalidad">Nacionalidad</option><option value="canal">Canal de registro</option><option value="estado">Estado de la cita</option>
+                  </select>
+                </label>
+                <label class="ga-inline">Desglose (series)
+                  <select id="gaG0Desglose">
+                    <option value="ninguno">Ninguno</option><option value="estado">Estado</option><option value="policlinico">Policlínico</option>
+                    <option value="especialidad">Especialidad</option><option value="modalidad">Modalidad</option>
+                  </select>
+                </label>
+                <label class="ga-inline">Tipo de gráfico
+                  <select id="gaG0Tipo"><option value="lineas">Líneas</option><option value="barras" selected>Barras</option><option value="apiladas">Barras apiladas</option></select>
+                </label>
+              </div>
+              <div class="ga-vistas-barra">
+                <input type="text" id="gaVistaNombre" maxlength="30" placeholder="Nombre de la vista" aria-label="Nombre de la vista a guardar" />
+                <button type="button" class="btn-sm btn-neutral" id="gaVistaGuardar">Guardar vista</button>
+                <div id="gaVistas" class="ga-vistas"></div>
+              </div>
+              <p class="ga-aviso hidden" id="gaG0Aviso" role="status"></p>
+              <div class="ga-canvas-wrap"><canvas id="gaCanvas-G0" role="img" aria-label="Explorador general"></canvas></div>
+              <p class="ga-empty hidden">Sin datos para los filtros seleccionados</p>
+              <div class="ga-tabla hidden" id="gaTabla-G0"></div>
+            </article>
+              </div>
+            </details>
           </div>
 
           <div class="card">
             <div class="card-head-row">
               <h3>Detalle de indicadores por policlínico</h3>
-              <a href="/api/reportes/exportar-csv" class="btn btn-primary">Exportar CSV</a>
+              <span class="muted ga-nota">Según los filtros aplicados · «—» = sin datos</span>
             </div>
             <div class="table-wrap">
               <table>
@@ -619,6 +869,8 @@
     </div>
   </div>
 
+  <script src="/static/vendor/chart.umd.min.js"></script>
+  <script src="/static/admin_graficos.js"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>
